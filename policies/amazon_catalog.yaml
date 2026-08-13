@@ -1,0 +1,22 @@
+id: amazon_catalog
+name: Amazon SP-API Catalog Items
+provider: amazon
+base_urls:
+  - https://sellingpartnerapi-na.amazon.com
+endpoints:
+  - path: /catalog/2022-04-01/items
+    methods:
+      - GET
+authentication:
+  required: true
+  type: LWA
+required_credentials:
+  - LWA_TOKEN
+  - SP_API_ROLE
+security:
+  allow_hardcoded_credentials: false
+decision:
+  unknown_endpoint: BLOCK
+  invalid_method: BLOCK
+  missing_authentication: BLOCK
+  hardcoded_secret: BLOCK

@@ -1,0 +1,25 @@
+id: ml_highlights
+name: Mercado Livre Highlights
+provider: mercado_livre
+base_urls:
+  - https://api.mercadolibre.com
+endpoints:
+  - path: /highlights/MLB/category/{category_id}
+    methods:
+      - GET
+authentication:
+  required: true
+  type: OAuth
+required_credentials:
+  - ACCESS_TOKEN
+parameters:
+  path:
+    - category_id
+security:
+  allow_hardcoded_credentials: false
+decision:
+  unknown_endpoint: BLOCK
+  invalid_method: BLOCK
+  missing_authentication: BLOCK
+  missing_parameter: BLOCK
+  hardcoded_secret: BLOCK

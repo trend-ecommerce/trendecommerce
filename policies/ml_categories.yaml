@@ -1,0 +1,17 @@
+id: ml_categories
+name: Mercado Livre Categories
+provider: mercado_livre
+base_urls:
+  - https://api.mercadolibre.com
+endpoints:
+  - path: /sites/MLB/categories
+    methods:
+      - GET
+authentication:
+  required: false
+security:
+  allow_hardcoded_credentials: false
+decision:
+  unknown_endpoint: BLOCK
+  invalid_method: BLOCK
+  hardcoded_secret: BLOCK

@@ -1,0 +1,21 @@
+id: ml_trends
+name: Mercado Livre Trends
+provider: mercado_livre
+base_urls:
+  - https://api.mercadolibre.com
+endpoints:
+  - path: /trends/MLB
+    methods:
+      - GET
+authentication:
+  required: true
+  type: OAuth
+required_credentials:
+  - ACCESS_TOKEN
+security:
+  allow_hardcoded_credentials: false
+decision:
+  unknown_endpoint: BLOCK
+  invalid_method: BLOCK
+  missing_authentication: BLOCK
+  hardcoded_secret: BLOCK

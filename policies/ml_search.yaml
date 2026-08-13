@@ -1,0 +1,21 @@
+id: ml_search
+name: Mercado Livre Search
+provider: mercado_livre
+base_urls:
+  - https://api.mercadolibre.com
+endpoints:
+  - path: /sites/MLB/search
+    methods:
+      - GET
+authentication:
+  required: false
+parameters:
+  required:
+    - q
+security:
+  allow_hardcoded_credentials: false
+decision:
+  unknown_endpoint: BLOCK
+  invalid_method: BLOCK
+  missing_parameter: BLOCK
+  hardcoded_secret: BLOCK

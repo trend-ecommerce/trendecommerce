@@ -1,0 +1,25 @@
+id: amazon_product_types
+name: Amazon SP-API Product Type Definitions
+provider: amazon
+base_urls:
+  - https://sellingpartnerapi-na.amazon.com
+endpoints:
+  - path: /definitions/2020-09-01/productTypes/{type}
+    methods:
+      - GET
+authentication:
+  required: true
+  type: LWA
+required_credentials:
+  - LWA_TOKEN
+  - SP_API_ROLE
+parameters:
+  path:
+    - type
+security:
+  allow_hardcoded_credentials: false
+decision:
+  unknown_endpoint: BLOCK
+  invalid_method: BLOCK
+  missing_authentication: BLOCK
+  hardcoded_secret: BLOCK
