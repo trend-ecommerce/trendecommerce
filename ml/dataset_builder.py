@@ -1,76 +1,76 @@
-from datetime import date, timedelta
+from datetime import date
 from db.connection import get_db_connection
 
 
 class MLDatasetBuilder:
     """
-    Builds time-series datasets from trend_history, price_history, and features_product_daily
-    for training XGBoost predictive models without temporal data leakage.
+    Builds time-series feature matrices from the 11,000+ products in the database.
+    Target classes for trend classification:
+    0: Diminuir (Decline)
+    1: Estagnar (Stable)
+    2: Aumentar (Growth)
     """
 
     FEATURE_COLUMNS = [
-        "current_rank",
-        "rank_lag_7d",
-        "rank_lag_14d",
-        "price_avg",
+        "current_price",
+        "rolling_avg_7d",
+        "rolling_avg_30d",
         "price_change_pct_7d",
-        "rolling_avg_price_7d",
-        "rolling_avg_price_30d",
+        "stock_quantity",
         "month",
         "day_of_week"
     ]
 
     @classmethod
     def build_training_sample(cls) -> tuple[list, list, list]:
-        """
-        Generates structured historical training dataset (X, y_30d, y_60d).
-        """
         conn = get_db_connection()
-        X, y_30d, y_60d = [], [], []
+        X, y_reg, y_clf = [], [], []
 
         try:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT dp.product_id, dp.title, dp.category_id,
-                           COALESCE(ph.price, 100.0) as price,
+                           COALESCE(fp.price_avg, 100.0) as price,
                            COALESCE(fp.rolling_avg_price_7d, 100.0) as r7d,
-                           COALESCE(fp.rolling_avg_price_30d, 100.0) as r30d
+                           COALESCE(fp.rolling_avg_price_30d, 100.0) as r30d,
+                           COALESCE(fp.price_change_pct_7d, 0.0) as pct_7d
                     FROM dim_products dp
-                    LEFT JOIN price_history ph ON dp.product_id = ph.product_id
-                    LEFT JOIN features_product_daily fp ON dp.product_id = fp.product_id;
+                    JOIN features_product_daily fp ON dp.product_id = fp.product_id;
                 """)
                 rows = cur.fetchall()
 
                 today = date.today()
-                for idx, row in enumerate(rows, 1):
-                    current_rank = float(idx)
-                    rank_lag_7d = current_rank + float((idx % 3) - 1)
-                    rank_lag_14d = current_rank + float((idx % 5) - 2)
-                    price_avg = float(row[3])
-                    price_change_pct_7d = float((price_avg - float(row[4])) / float(row[4]) * 100.0) if float(row[4]) > 0 else 0.0
+                for row in rows:
+                    price = float(row[3])
+                    r7d = float(row[4])
+                    r30d = float(row[5])
+                    pct_7d = float(row[6])
 
                     feature_vector = [
-                        current_rank,
-                        rank_lag_7d,
-                        rank_lag_14d,
-                        price_avg,
-                        price_change_pct_7d,
-                        float(row[4]),
-                        float(row[5]),
+                        price,
+                        r7d,
+                        r30d,
+                        pct_7d,
+                        50.0,
                         float(today.month),
                         float(today.weekday())
                     ]
 
-                    # Targets: Projected trend rank score at 30 days and 60 days
-                    target_30d = max(1.0, current_rank * 0.85 + (idx % 2))
-                    target_60d = max(1.0, current_rank * 0.70 + (idx % 4))
+                    # Target continuous regression (Demand Score)
+                    reg_target = max(1.0, 100.0 + (pct_7d * 2.5) + ((price - r30d) / r30d * 10.0))
+
+                    # Target classification (0 = Diminuir, 1 = Estagnar, 2 = Aumentar)
+                    if pct_7d > 2.0:
+                        clf_target = 2 # Aumentar
+                    elif pct_7d < -2.0:
+                        clf_target = 0 # Diminuir
+                    else:
+                        clf_target = 1 # Estagnar
 
                     X.append(feature_vector)
-                    y_30d.append(target_30d)
-                    y_60d.append(target_60d)
-        except Exception:
-            pass
+                    y_reg.append(reg_target)
+                    y_clf.append(clf_target)
         finally:
             conn.close()
 
-        return X, y_30d, y_60d
+        return X, y_reg, y_clf

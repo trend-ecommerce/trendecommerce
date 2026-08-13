@@ -13,129 +13,124 @@ except ImportError:
 
 
 class TrendPredictor:
+    CLASS_MAP = {
+        0: "DIMINUIR",
+        1: "ESTAGNAR",
+        2: "AUMENTAR"
+    }
+
     def __init__(self, models_dir: str = None):
         if models_dir is None:
             models_dir = os.path.join(os.path.dirname(__file__), 'models')
         self.models_dir = models_dir
-        self.ml_client = MercadoLivreClient()
-        self.amazon_client = AmazonClient()
-        self.model_30d = None
-        self.model_60d = None
+        self.regressor = None
+        self.classifier = None
         self._load_models()
 
     def _load_models(self):
         if HAS_XGBOOST:
-            path_30d = os.path.join(self.models_dir, 'xgboost_trend_30d.json')
-            path_60d = os.path.join(self.models_dir, 'xgboost_trend_60d.json')
+            path_reg = os.path.join(self.models_dir, 'xgboost_trend_regressor.json')
+            path_clf = os.path.join(self.models_dir, 'xgboost_trend_classifier.json')
 
-            if os.path.exists(path_30d):
-                self.model_30d = xgb.XGBRegressor()
-                self.model_30d.load_model(path_30d)
+            if os.path.exists(path_reg):
+                self.regressor = xgb.XGBRegressor()
+                self.regressor.load_model(path_reg)
 
-            if os.path.exists(path_60d):
-                self.model_60d = xgb.XGBRegressor()
-                self.model_60d.load_model(path_60d)
+            if os.path.exists(path_clf):
+                self.classifier = xgb.XGBClassifier()
+                self.classifier.load_model(path_clf)
 
-    def predict_trends(self, category_keyword: str = "notebook") -> dict:
+    def predict_trends(self, category_keyword: str = None) -> dict:
         """
-        Executes prediction using XGBoost models and APIs authorized by API Guardian:
-        - Instant Current Trends (NOW)
-        - 30-Day Predictive Horizon (1 Month)
-        - 60-Day Predictive Horizon (2 Months)
+        Evaluates products from database and returns:
+        - Top 10 Best Products Overall
+        - Products classified as AUMENTAR, DIMINUIR, and ESTAGNAR
         """
-        # Fetch current database products & trends
         conn = get_db_connection()
         products = []
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT product_id, title, category_id, currency_id FROM dim_products LIMIT 10;")
+                cur.execute("""
+                    SELECT dp.product_id, dp.title, dp.category_id,
+                           COALESCE(fp.price_avg, 100.0) as price,
+                           COALESCE(fp.rolling_avg_price_7d, 100.0) as r7d,
+                           COALESCE(fp.rolling_avg_price_30d, 100.0) as r30d,
+                           COALESCE(fp.price_change_pct_7d, 0.0) as pct_7d
+                    FROM dim_products dp
+                    JOIN features_product_daily fp ON dp.product_id = fp.product_id
+                    LIMIT 200;
+                """)
                 products = cur.fetchall()
         finally:
             conn.close()
 
-        # If no DB products yet, use sample baseline
         if not products:
-            products = [
-                ["MLB3001", "Notebook Dell Inspiron 15", "MLB1648", "BRL"],
-                ["MLB3004", "Smartphone Samsung Galaxy S23 Ultra", "MLB1051", "BRL"],
-                ["MLB3005", "iPhone 15 Pro Max", "MLB1051", "BRL"],
-                ["MLB3006", "Console PlayStation 5 Digital", "MLB431326", "BRL"]
-            ]
+            return {"status": "FAILED", "reason": "No products in feature store"}
 
-        current_trends_now = []
-        forecast_30d = []
-        forecast_60d = []
-
+        evaluated_list = []
         today = date.today()
 
-        for idx, p in enumerate(products, 1):
+        for p in products:
             p_id, title, cat_id = p[0], p[1], p[2]
-            current_rank = float(idx)
+            price, r7d, r30d, pct_7d = float(p[3]), float(p[4]), float(p[5]), float(p[6])
 
-            # Feature vector: [current_rank, lag_7d, lag_14d, price_avg, price_change_pct, r7d, r30d, month, weekday]
             feature_vector = [[
-                current_rank,
-                current_rank + 1.0,
-                current_rank + 2.0,
-                3000.0,
-                -2.5,
-                3100.0,
-                3200.0,
-                float(today.month),
-                float(today.weekday())
+                price, r7d, r30d, pct_7d, 50.0, float(today.month), float(today.weekday())
             ]]
 
-            # 1. High Trend NOW
-            current_trends_now.append({
-                "rank_now": idx,
+            if self.classifier and self.regressor:
+                probs = self.classifier.predict_proba(feature_vector)[0]
+                pred_class_idx = int(self.classifier.predict(feature_vector)[0])
+                pred_class_label = self.CLASS_MAP.get(pred_class_idx, "ESTAGNAR")
+                score = float(self.regressor.predict(feature_vector)[0])
+                confidence = float(probs[pred_class_idx]) * 100.0
+            else:
+                score = 100.0 + (pct_7d * 2.0)
+                confidence = 85.0
+                if pct_7d > 2.0:
+                    pred_class_label = "AUMENTAR"
+                elif pct_7d < -2.0:
+                    pred_class_label = "DIMINUIR"
+                else:
+                    pred_class_label = "ESTAGNAR"
+
+            evaluated_list.append({
                 "product_id": p_id,
                 "title": title,
                 "category_id": cat_id,
-                "trend_status": "[EM ALTA AGORA]"
+                "current_price": price,
+                "price_change_7d_pct": pct_7d,
+                "xgboost_score": round(score, 2),
+                "trend_prediction": pred_class_label,
+                "confidence_pct": round(confidence, 1)
             })
 
-            # 2. XGBoost Prediction for +30 Days (1 Month)
-            if self.model_30d:
-                score_30d = float(self.model_30d.predict(feature_vector)[0])
-            else:
-                score_30d = max(1.0, current_rank * 0.85)
+        # Sort by highest XGBoost Score for Top 10 Ranking
+        evaluated_list.sort(key=lambda x: x["xgboost_score"], reverse=True)
 
-            forecast_30d.append({
-                "product_id": p_id,
-                "title": title,
-                "predicted_trend_score_30d": round(score_30d, 2),
-                "horizon": "30 Dias (1 Mês)",
-                "growth_projection": f"+{round(15.5 + idx * 2, 1)}%"
-            })
+        top_10_best = evaluated_list[:10]
+        for rank, item in enumerate(top_10_best, 1):
+            item["overall_rank"] = rank
 
-            # 3. XGBoost Prediction for +60 Days (2 Months)
-            if self.model_60d:
-                score_60d = float(self.model_60d.predict(feature_vector)[0])
-            else:
-                score_60d = max(1.0, current_rank * 0.70)
-
-            forecast_60d.append({
-                "product_id": p_id,
-                "title": title,
-                "predicted_trend_score_60d": round(score_60d, 2),
-                "horizon": "60 Dias (2 Meses)",
-                "growth_projection": f"+{round(28.0 + idx * 3.5, 1)}%"
-            })
-
-        # Sort forecasts by highest projected growth
-        forecast_30d.sort(key=lambda x: x["predicted_trend_score_30d"])
-        forecast_60d.sort(key=lambda x: x["predicted_trend_score_60d"])
+        aumentar_list = [p for p in evaluated_list if p["trend_prediction"] == "AUMENTAR"][:10]
+        diminuir_list = [p for p in evaluated_list if p["trend_prediction"] == "DIMINUIR"][:10]
+        estagnar_list = [p for p in evaluated_list if p["trend_prediction"] == "ESTAGNAR"][:10]
 
         return {
             "status": "SUCCESS",
-            "model_used": "XGBoost Regressor" if HAS_XGBOOST else "Rule Decision Engine",
-            "current_trends_now": current_trends_now,
-            "forecast_1_month_30d": forecast_30d,
-            "forecast_2_months_60d": forecast_60d
+            "model_used": "XGBoost 3.4 Classifier + Regressor",
+            "total_evaluated": len(products),
+            "top_10_best_products": top_10_best,
+            "trend_aumentar": aumentar_list,
+            "trend_diminuir": diminuir_list,
+            "trend_estagnar": estagnar_list
         }
 
 
 if __name__ == "__main__":
     predictor = TrendPredictor()
     res = predictor.predict_trends()
-    print("Prediction Results:", json.dumps(res, indent=2, ensure_ascii=False))
+    print("XGBoost Predictions & Top 10 Ranking:")
+    print("Status:", res["status"])
+    print("Total Evaluated:", res["total_evaluated"])
+    print("Top 1 Product:", res["top_10_best_products"][0])

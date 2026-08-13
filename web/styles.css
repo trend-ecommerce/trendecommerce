@@ -230,6 +230,7 @@ body {
   gap: 8px;
   border-bottom: 1px solid var(--border-color);
   margin-bottom: 24px;
+  overflow-x: auto;
 }
 
 .tab-btn {
@@ -242,6 +243,7 @@ body {
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .tab-btn:hover {
@@ -259,6 +261,63 @@ body {
 
 .tab-content.active {
   display: block;
+}
+
+/* Top 10 Grid */
+.top10-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.top10-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.top10-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-cyan);
+}
+
+.rank-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top10-info {
+  flex: 1;
+}
+
+.top10-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.top10-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 12px;
 }
 
 /* Search and Filters Bar */
@@ -415,11 +474,6 @@ body {
   color: var(--accent-green);
 }
 
-.stock-tag {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 .btn-details {
   background: rgba(56, 189, 248, 0.1);
   color: var(--accent-cyan);
@@ -476,8 +530,8 @@ body {
 }
 
 .panel-header.fire {
-  background: rgba(244, 63, 94, 0.1);
-  border-bottom-color: rgba(244, 63, 94, 0.3);
+  background: rgba(52, 211, 153, 0.1);
+  border-bottom-color: rgba(52, 211, 153, 0.3);
 }
 
 .panel-header.blue {
@@ -486,8 +540,8 @@ body {
 }
 
 .panel-header.purple {
-  background: rgba(129, 140, 248, 0.1);
-  border-bottom-color: rgba(129, 140, 248, 0.3);
+  background: rgba(244, 63, 94, 0.1);
+  border-bottom-color: rgba(244, 63, 94, 0.3);
 }
 
 .panel-header h3 {
@@ -538,12 +592,25 @@ body {
 }
 
 .growth-badge {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--accent-green);
-  background: rgba(52, 211, 153, 0.15);
   padding: 4px 10px;
   border-radius: 20px;
+}
+
+.growth-badge.green {
+  color: var(--accent-green);
+  background: rgba(52, 211, 153, 0.15);
+}
+
+.growth-badge.yellow {
+  color: var(--accent-amber);
+  background: rgba(251, 191, 36, 0.15);
+}
+
+.growth-badge.red {
+  color: var(--accent-rose);
+  background: rgba(244, 63, 94, 0.15);
 }
 
 /* Telemetry Section */

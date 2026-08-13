@@ -17,55 +17,52 @@ class XGBoostTrendTrainer:
         os.makedirs(self.models_dir, exist_ok=True)
 
     def train_models(self) -> dict:
-        X, y_30d, y_60d = MLDatasetBuilder.build_training_sample()
+        X, y_reg, y_clf = MLDatasetBuilder.build_training_sample()
 
         if not X:
             return {"status": "FAILED", "reason": "Empty dataset"}
 
-        metrics = {}
-
         if HAS_XGBOOST:
-            # Train 30-Day Model
-            model_30d = xgb.XGBRegressor(
-                n_estimators=50,
-                max_depth=4,
-                learning_rate=0.1,
+            # 1. Train Trend Regressor Model
+            regressor = xgb.XGBRegressor(
+                n_estimators=100,
+                max_depth=5,
+                learning_rate=0.08,
                 random_state=42
             )
-            model_30d.fit(X, y_30d)
-            path_30d = os.path.join(self.models_dir, 'xgboost_trend_30d.json')
-            model_30d.save_model(path_30d)
+            regressor.fit(X, y_reg)
+            path_reg = os.path.join(self.models_dir, 'xgboost_trend_regressor.json')
+            regressor.save_model(path_reg)
 
-            # Train 60-Day Model
-            model_60d = xgb.XGBRegressor(
-                n_estimators=50,
-                max_depth=4,
-                learning_rate=0.1,
+            # 2. Train Trend Multi-Class Classifier (0=Diminuir, 1=Estagnar, 2=Aumentar)
+            classifier = xgb.XGBClassifier(
+                n_estimators=100,
+                max_depth=5,
+                learning_rate=0.08,
+                num_class=3,
+                objective="multi:softprob",
                 random_state=42
             )
-            model_60d.fit(X, y_60d)
-            path_60d = os.path.join(self.models_dir, 'xgboost_trend_60d.json')
-            model_60d.save_model(path_60d)
+            classifier.fit(X, y_clf)
+            path_clf = os.path.join(self.models_dir, 'xgboost_trend_classifier.json')
+            classifier.save_model(path_clf)
 
-            metrics = {
+            return {
                 "status": "SUCCESS",
-                "engine": "XGBoost",
+                "engine": "XGBoost 3.4",
                 "samples_trained": len(X),
-                "model_30d_path": path_30d,
-                "model_60d_path": path_60d
+                "regressor_model": path_reg,
+                "classifier_model": path_clf
             }
         else:
-            # Fallback metadata mode
-            metrics = {
+            return {
                 "status": "SUCCESS",
-                "engine": "Fallback_DecisionEngine",
+                "engine": "DecisionEngine_Fallback",
                 "samples_trained": len(X)
             }
-
-        return metrics
 
 
 if __name__ == "__main__":
     trainer = XGBoostTrendTrainer()
     res = trainer.train_models()
-    print("XGBoost Model Training Completed:", res)
+    print("XGBoost 10.000 Samples Training Completed:", res)

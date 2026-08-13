@@ -1,4 +1,4 @@
-// TrendCommerce AI — Web Application Logic
+// TrendCommerce AI — Web Application Logic (10.000+ Items)
 
 let allProducts = [];
 let activeCategory = "ALL";
@@ -11,80 +11,82 @@ document.addEventListener("DOMContentLoaded", () => {
   loadData();
 });
 
-// 1. Data Fetching
 async function loadData() {
   await Promise.all([
+    fetchTop10(),
     fetchProducts(),
     fetchPredictions(),
     fetchTelemetry()
   ]);
 }
 
+// 1. Fetch Top 10 Ranked Products
+async function fetchTop10() {
+  const container = document.getElementById("top10-grid");
+  try {
+    const res = await fetch("/api/top10");
+    const data = await res.json();
+
+    if (data.status === "SUCCESS" && data.top_10_products) {
+      renderTop10(data.top_10_products);
+    }
+  } catch (err) {
+    container.innerHTML = `<div style="grid-column: 1/-1; color: var(--accent-rose);">Falha ao carregar ranking Top 10.</div>`;
+  }
+}
+
+function renderTop10(products) {
+  const container = document.getElementById("top10-grid");
+  if (!products || products.length === 0) {
+    container.innerHTML = `<div style="grid-column: 1/-1;">Sem dados de ranking no momento.</div>`;
+    return;
+  }
+
+  container.innerHTML = products.map(item => `
+    <div class="top10-card">
+      <div class="rank-badge">#${item.overall_rank}</div>
+      <div class="top10-info">
+        <h4 class="top10-title">${escapeHtml(item.title)}</h4>
+        <div class="top10-meta">
+          <span>Cat: ${item.category_id}</span>
+          <span>R$ ${item.current_price.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+        </div>
+      </div>
+      <span class="growth-badge green">Score ${item.xgboost_score}</span>
+    </div>
+  `).join('');
+}
+
+// 2. Fetch Products
 async function fetchProducts() {
   const grid = document.getElementById("products-grid");
-  grid.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: var(--text-secondary);">Carregando produtos do banco...</div>`;
+  grid.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: var(--text-secondary);">Carregando produtos do banco (10.000+)...</div>`;
 
   try {
-    const res = await fetch("/api/products");
+    const searchVal = document.getElementById("search-input").value.trim();
+    const url = `/api/products?page=1&limit=60&category=${encodeURIComponent(activeCategory)}&search=${encodeURIComponent(searchVal)}`;
+    const res = await fetch(url);
     const data = await res.json();
 
     if (data.status === "SUCCESS") {
       allProducts = data.products;
-      document.getElementById("kpi-total-products").textContent = data.total;
-      renderProducts();
-    } else {
-      grid.innerHTML = `<div style="grid-column: 1/-1; color: var(--accent-rose);">Erro ao carregar produtos do banco.</div>`;
+      document.getElementById("kpi-total-products").textContent = data.total.toLocaleString('pt-BR');
+      renderProductsGrid(allProducts);
     }
   } catch (err) {
-    grid.innerHTML = `<div style="grid-column: 1/-1; color: var(--accent-rose);">Falha na conexão com a API de produtos.</div>`;
+    grid.innerHTML = `<div style="grid-column: 1/-1; color: var(--accent-rose);">Falha na conexão com a API.</div>`;
   }
 }
 
-async function fetchPredictions() {
-  try {
-    const res = await fetch("/api/predictions");
-    const data = await res.json();
-
-    if (data.status === "SUCCESS") {
-      renderPredictions(data);
-    }
-  } catch (err) {
-    console.error("Falha ao buscar previsões:", err);
-  }
-}
-
-async function fetchTelemetry() {
-  try {
-    const res = await fetch("/api/telemetry");
-    const data = await res.json();
-
-    if (data.status === "SUCCESS") {
-      renderTelemetry(data.runs);
-    }
-  } catch (err) {
-    console.error("Falha ao buscar telemetria:", err);
-  }
-}
-
-// 2. Rendering Products Grid
-function renderProducts() {
+function renderProductsGrid(products) {
   const grid = document.getElementById("products-grid");
-  const searchVal = document.getElementById("search-input").value.toLowerCase().trim();
 
-  const filtered = allProducts.filter(p => {
-    const matchesCategory = (activeCategory === "ALL") || (p.category_id === activeCategory);
-    const matchesSearch = p.title.toLowerCase().includes(searchVal) ||
-                          p.product_id.toLowerCase().includes(searchVal) ||
-                          p.category_id.toLowerCase().includes(searchVal);
-    return matchesCategory && matchesSearch;
-  });
-
-  if (filtered.length === 0) {
-    grid.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: var(--text-muted);">Nenhum produto encontrado para o filtro selecionado.</div>`;
+  if (!products || products.length === 0) {
+    grid.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: var(--text-muted);">Nenhum produto encontrado.</div>`;
     return;
   }
 
-  grid.innerHTML = filtered.map(p => `
+  grid.innerHTML = products.map(p => `
     <div class="product-card">
       <div>
         <div class="product-card-header">
@@ -104,46 +106,71 @@ function renderProducts() {
   `).join('');
 }
 
-// 3. Rendering XGBoost Predictions
+// 3. Fetch XGBoost Predictions (AUMENTAR, ESTAGNAR, DIMINUIR)
+async function fetchPredictions() {
+  try {
+    const res = await fetch("/api/predictions");
+    const data = await res.json();
+
+    if (data.status === "SUCCESS") {
+      renderPredictions(data);
+    }
+  } catch (err) {
+    console.error("Falha ao carregar previsões XGBoost:", err);
+  }
+}
+
 function renderPredictions(data) {
-  // Em Alta Agora
-  const nowList = document.getElementById("list-trends-now");
-  nowList.innerHTML = (data.current_trends_now || []).map(item => `
+  // AUMENTAR
+  const aumentarList = document.getElementById("list-trends-aumentar");
+  aumentarList.innerHTML = (data.trend_aumentar || []).map(item => `
     <div class="prediction-item">
       <div class="item-info">
         <span class="item-title">${escapeHtml(item.title)}</span>
-        <span class="item-sub">Rank #${item.rank_now} | ID: ${item.product_id}</span>
+        <span class="item-sub">Cat: ${item.category_id} | Score: ${item.xgboost_score}</span>
       </div>
-      <span class="growth-badge" style="color: var(--accent-rose); background: rgba(244, 63, 94, 0.15);">EM ALTA</span>
+      <span class="growth-badge green">📈 AUMENTAR (${item.confidence_pct}%)</span>
     </div>
   `).join('');
 
-  // Projeção 30d
-  const p30List = document.getElementById("list-forecast-30d");
-  p30List.innerHTML = (data.forecast_1_month_30d || []).map(item => `
+  // ESTAGNAR
+  const estagnarList = document.getElementById("list-trends-estagnar");
+  estagnarList.innerHTML = (data.trend_estagnar || []).map(item => `
     <div class="prediction-item">
       <div class="item-info">
         <span class="item-title">${escapeHtml(item.title)}</span>
-        <span class="item-sub">Score Preditivo: ${item.predicted_trend_score_30d}</span>
+        <span class="item-sub">Cat: ${item.category_id} | Score: ${item.xgboost_score}</span>
       </div>
-      <span class="growth-badge">${item.growth_projection}</span>
+      <span class="growth-badge yellow">⚖️ ESTAGNAR (${item.confidence_pct}%)</span>
     </div>
   `).join('');
 
-  // Projeção 60d
-  const p60List = document.getElementById("list-forecast-60d");
-  p60List.innerHTML = (data.forecast_2_months_60d || []).map(item => `
+  // DIMINUIR
+  const diminuirList = document.getElementById("list-trends-diminuir");
+  diminuirList.innerHTML = (data.trend_diminuir || []).map(item => `
     <div class="prediction-item">
       <div class="item-info">
         <span class="item-title">${escapeHtml(item.title)}</span>
-        <span class="item-sub">Score Preditivo: ${item.predicted_trend_score_60d}</span>
+        <span class="item-sub">Cat: ${item.category_id} | Score: ${item.xgboost_score}</span>
       </div>
-      <span class="growth-badge" style="color: var(--accent-indigo); background: rgba(129, 140, 248, 0.15);">${item.growth_projection}</span>
+      <span class="growth-badge red">📉 DIMINUIR (${item.confidence_pct}%)</span>
     </div>
   `).join('');
 }
 
-// 4. Rendering Telemetry Table
+// 4. Telemetry Table
+async function fetchTelemetry() {
+  try {
+    const res = await fetch("/api/telemetry");
+    const data = await res.json();
+    if (data.status === "SUCCESS") {
+      renderTelemetry(data.runs);
+    }
+  } catch (err) {
+    console.error("Falha ao carregar telemetria:", err);
+  }
+}
+
 function renderTelemetry(runs) {
   const tbody = document.getElementById("telemetry-table-body");
   if (!runs || runs.length === 0) {
@@ -164,7 +191,7 @@ function renderTelemetry(runs) {
   `).join('');
 }
 
-// 5. Tabs Management
+// Tabs & Filters
 function initTabs() {
   const tabBtns = document.querySelectorAll(".tab-btn");
   tabBtns.forEach(btn => {
@@ -179,10 +206,13 @@ function initTabs() {
   });
 }
 
-// 6. Search and Filter Management
 function initSearchAndFilter() {
+  let timer;
   const searchInput = document.getElementById("search-input");
-  searchInput.addEventListener("input", renderProducts);
+  searchInput.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(fetchProducts, 300);
+  });
 
   const chips = document.querySelectorAll(".filter-chip");
   chips.forEach(chip => {
@@ -190,24 +220,18 @@ function initSearchAndFilter() {
       chips.forEach(c => c.classList.remove("active"));
       chip.classList.add("active");
       activeCategory = chip.getAttribute("data-category");
-      renderProducts();
+      fetchProducts();
     });
   });
 }
 
-// 7. Modal Details
 function initModal() {
   const modal = document.getElementById("product-modal");
   const closeBtn = document.getElementById("modal-close");
 
-  closeBtn.addEventListener("click", () => {
-    modal.classList.add("hidden");
-  });
-
+  closeBtn.addEventListener("click", () => modal.classList.add("hidden"));
   modal.addEventListener("click", (e) => {
-    if (e.target === modal) {
-      modal.classList.add("hidden");
-    }
+    if (e.target === modal) modal.classList.add("hidden");
   });
 }
 
@@ -225,7 +249,6 @@ function openProductModal(productId) {
   document.getElementById("product-modal").classList.remove("hidden");
 }
 
-// 8. Refresh Button
 function initRefreshBtn() {
   const btn = document.getElementById("btn-refresh");
   btn.addEventListener("click", async () => {
