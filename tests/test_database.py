@@ -21,7 +21,15 @@ class TestDatabase(unittest.TestCase):
     def test_run_migrations(self):
         migrator = DatabaseMigrator()
         applied = migrator.run_migrations()
-        self.assertIn("001", applied)
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT version FROM schema_migrations WHERE version = '001';")
+                row = cur.fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row[0], "001")
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":
