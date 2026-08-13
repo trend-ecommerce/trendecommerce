@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TrendCommerce AI — Plataforma de Inteligência Preditiva de E-commerce</title>
+
+  <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="brand-logo">TC</div>
+        <div>
+          <h1 class="brand-title">TrendCommerce <span class="badge-ai">AI Platform</span></h1>
+          <p class="brand-subtitle">Plataforma de Engenharia de Dados, Ingestão Resiliente e Previsão XGBoost</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span>API Guardian: <strong>PROTEGIDO</strong></span>
+        </div>
+        <button id="btn-refresh" class="btn btn-secondary">
+          🔄 Atualizar Dados
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-container">
+
+    <!-- KPI Summary Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-label">PRODUTOS NO BANCO</span>
+          <span class="kpi-icon">📦</span>
+        </div>
+        <div class="kpi-value" id="kpi-total-products">10</div>
+        <div class="kpi-subtext">Armazenados em <code class="code-inline">dim_products</code></div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-label">ENTRADAS NO HISTÓRICO</span>
+          <span class="kpi-icon">📈</span>
+        </div>
+        <div class="kpi-value" id="kpi-ledger-entries">20</div>
+        <div class="kpi-subtext">Ledger temporal <code class="code-inline">price_history</code></div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-label">MODELO PREDITIVO</span>
+          <span class="kpi-icon">🤖</span>
+        </div>
+        <div class="kpi-value">XGBoost 3.4</div>
+        <div class="kpi-subtext">Horizontes de 30 e 60 Dias</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-label">TELEMETRIA ETL</span>
+          <span class="kpi-icon">⚡</span>
+        </div>
+        <div class="kpi-value green-text">100% SUCCESS</div>
+        <div class="kpi-subtext">Sem falhas ou quarentenas</div>
+      </div>
+    </section>
+
+    <!-- Main Navigation Tabs -->
+    <div class="tab-navigation">
+      <button class="tab-btn active" data-tab="tab-products">
+        📦 Produtos Cadastrados no Banco
+      </button>
+      <button class="tab-btn" data-tab="tab-predictions">
+        🚀 Previsões de Tendências (XGBoost AI)
+      </button>
+      <button class="tab-btn" data-tab="tab-telemetry">
+        ⚡ Telemetria de Ingestão & SRE
+      </button>
+    </div>
+
+    <!-- TAB 1: DB PRODUCTS -->
+    <section id="tab-products" class="tab-content active">
+      <div class="control-bar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="Buscar produtos no banco por título, ID ou categoria...">
+        </div>
+        <div class="category-filters" id="category-filters">
+          <button class="filter-chip active" data-category="ALL">Todas Categorias</button>
+          <button class="filter-chip" data-category="MLB1648">Notebooks & Informática</button>
+          <button class="filter-chip" data-category="MLB1051">Smartphones</button>
+          <button class="filter-chip" data-category="MLB431326">Consoles & Games</button>
+          <button class="filter-chip" data-category="MLB1002">Smart TVs</button>
+        </div>
+      </div>
+
+      <!-- Products Grid Container -->
+      <div class="products-grid" id="products-grid">
+        <!-- Rendered dynamically via JS -->
+      </div>
+    </section>
+
+    <!-- TAB 2: XGBOOST PREDICTIONS -->
+    <section id="tab-predictions" class="tab-content">
+      <div class="predictions-header">
+        <h2>🔮 Inteligência Preditiva de Mercado (XGBoost)</h2>
+        <p>Análise de aceleração de busca e projetação de demanda para 30 e 60 dias sem vazamento temporal.</p>
+      </div>
+
+      <div class="predictions-grid">
+        <!-- Panel 1: Em Alta Agora -->
+        <div class="prediction-panel">
+          <div class="panel-header fire">
+            <h3>🔥 Em Alta Agora (Tempo Real)</h3>
+            <span class="panel-badge">API Guardian Whitelisted</span>
+          </div>
+          <div class="prediction-list" id="list-trends-now">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- Panel 2: Previsão +30 Dias -->
+        <div class="prediction-panel">
+          <div class="panel-header blue">
+            <h3>📅 Projeção para 30 Dias (1 Mês)</h3>
+            <span class="panel-badge">XGBoost Regressor</span>
+          </div>
+          <div class="prediction-list" id="list-forecast-30d">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- Panel 3: Previsão +60 Dias -->
+        <div class="prediction-panel">
+          <div class="panel-header purple">
+            <h3>🚀 Projeção para 60 Dias (2 Meses)</h3>
+            <span class="panel-badge">XGBoost Regressor</span>
+          </div>
+          <div class="prediction-list" id="list-forecast-60d">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: TELEMETRY & SRE -->
+    <section id="tab-telemetry" class="tab-content">
+      <div class="telemetry-card">
+        <h2>📊 Histórico de Execuções da Pipeline ETL</h2>
+        <table class="telemetry-table">
+          <thead>
+            <tr>
+              <th>Run ID</th>
+              <th>Pipeline</th>
+              <th>Fonte API</th>
+              <th>Status SRE</th>
+              <th>Buscados</th>
+              <th>Inseridos</th>
+              <th>Data/Hora UTC</th>
+            </tr>
+          </thead>
+          <tbody id="telemetry-table-body">
+            <!-- Rendered dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Product Detail Modal -->
+  <div id="product-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <button class="modal-close" id="modal-close">&times;</button>
+      <div class="modal-header">
+        <span class="product-id-tag" id="modal-id">MLB3001</span>
+        <h3 id="modal-title">Título do Produto</h3>
+      </div>
+      <div class="modal-body">
+        <div class="modal-detail-row">
+          <span>Categoria:</span> <strong id="modal-category">MLB1648</strong>
+        </div>
+        <div class="modal-detail-row">
+          <span>Preço Atual:</span> <strong id="modal-price" class="price-highlight">R$ 0.00</strong>
+        </div>
+        <div class="modal-detail-row">
+          <span>Quantidade em Estoque:</span> <strong id="modal-stock">0 unidades</strong>
+        </div>
+        <div class="modal-detail-row">
+          <span>Última Amostragem:</span> <span id="modal-date">2026-08-13</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
