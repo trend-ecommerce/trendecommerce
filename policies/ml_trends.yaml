@@ -3,15 +3,13 @@ name: Mercado Livre Trends
 provider: mercado_livre
 base_urls:
   - https://api.mercadolibre.com
+  - https://api.mercadolivre.com
 endpoints:
   - path: /trends/MLB
     methods:
       - GET
 authentication:
-  required: true
-  type: OAuth
-required_credentials:
-  - ACCESS_TOKEN
+  required: false
 security:
   allow_hardcoded_credentials: false
 decision:

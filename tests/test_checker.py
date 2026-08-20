@@ -35,7 +35,7 @@ def fetch_data():
 from api_guardian.runtime_guard import guarded_request
 
 def fetch_data():
-    return guarded_request("GET", "https://api.mercadolibre.com/sites/MLB/search", params={"q": "phone"})
+    return guarded_request("GET", "https://api.mercadolibre.com/sites/MLB/search?q=phone")
 """
         with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as f:
             f.write(code)

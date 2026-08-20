@@ -1,15 +1,10 @@
 import os
 import re
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlencode
 from .config import GuardianConfig
 
 
 def match_path_template(template: str, actual_path: str):
-    """
-    Matches a path template like '/items/{item_id}' against an actual path like '/items/MLB123'.
-    Returns (is_match, extracted_path_params).
-    """
-    # Normalize paths
     template = template.rstrip('/')
     actual_path = actual_path.rstrip('/')
 
@@ -27,169 +22,156 @@ def match_path_template(template: str, actual_path: str):
     return True, extracted_params
 
 
+class PolicyResult(dict):
+    """Dict subclass allowing attribute access for .status and .decision"""
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        self[name] = value
+
+
 class PolicyEngine:
     def __init__(self, config: GuardianConfig = None):
         if config is None:
             config = GuardianConfig()
         self.config = config
 
-    def evaluate(self, request: dict) -> dict:
-        """
-        Evaluates an HTTP request against loaded YAML policies.
-        
-        request = {
-            'provider': optional,
-            'url': 'https://api.mercadolibre.com/sites/MLB/search?q=notebook',
-            'method': 'GET',
-            'headers': {},
-            'params': {},
-            'file': 'mercadolivre.py',
-            'line': 84
-        }
-        """
+    def evaluate(self, method_or_request, url: str = None, headers: dict = None, params: dict = None) -> PolicyResult:
+        if isinstance(method_or_request, dict):
+            request = method_or_request
+        else:
+            request = {
+                "method": method_or_request,
+                "url": url,
+                "headers": headers or {},
+                "params": params or {}
+            }
+
         raw_url = request.get('url', '')
+        req_params = request.get('params') or {}
+        if req_params and '?' not in raw_url:
+            raw_url = f"{raw_url}?{urlencode(req_params)}"
+
         method = (request.get('method') or 'GET').upper()
         headers = request.get('headers') or {}
-        params = request.get('params') or {}
-        filepath = request.get('file', 'unknown')
+        filepath = request.get('file', '')
         line = request.get('line', 0)
 
-        # Parse URL
-        parsed = urlparse(raw_url)
-        base_url = f"{parsed.scheme}://{parsed.netloc}"
-        path = parsed.path or '/'
-
-        # Parse query params from URL if present
-        query_params = parse_qs(parsed.query)
-        combined_params = {}
-        for k, v in query_params.items():
-            combined_params[k] = v[0] if len(v) == 1 else v
-        if isinstance(params, dict):
-            combined_params.update(params)
+        parsed_url = urlparse(raw_url)
+        path = parsed_url.path
+        query_params = parse_qs(parsed_url.query)
 
         matched_policy = None
         matched_endpoint_spec = None
         extracted_path_params = {}
 
-        # Search for matching policy by base_url and endpoint path
         for policy in self.config.policies:
-            policy_base_urls = [u.rstrip('/') for u in policy.get('base_urls', [])]
-            if base_url.rstrip('/') not in policy_base_urls:
-                continue
-
-            for ep in policy.get('endpoints', []):
-                ep_path = ep.get('path', '')
-                is_match, path_params = match_path_template(ep_path, path)
-                if is_match:
-                    matched_policy = policy
-                    matched_endpoint_spec = ep
-                    extracted_path_params = path_params
+            endpoints = policy.get('endpoints', [])
+            if endpoints:
+                for ep in endpoints:
+                    tmpl = ep.get('path', '')
+                    is_match, p_params = match_path_template(tmpl, path)
+                    if is_match:
+                        matched_policy = policy
+                        matched_endpoint_spec = ep
+                        extracted_path_params = p_params
+                        break
+                if matched_policy:
                     break
-            if matched_policy:
-                break
-
-        # UNKNOWN API OR UNKNOWN ENDPOINT -> BLOCK
-        if not matched_policy or not matched_endpoint_spec:
-            return {
-                'decision': 'BLOCK',
-                'severity': 'A — CRITICAL',
-                'policy': 'unknown',
-                'reason': f"Endpoint ou API não autorizada: {method} {raw_url}",
-                'file': filepath,
-                'line': line,
-                'details': [
-                    f"✗ URL {raw_url} não corresponde a nenhuma API ou endpoint configurado."
-                ]
-            }
-
-        policy_name = matched_policy.get('name', matched_policy.get('id'))
-        details = [f"✓ Endpoint identificado: {policy_name}"]
-
-        # 1. Validate Method
-        allowed_methods = matched_endpoint_spec.get('methods', [])
-        if method not in allowed_methods:
-            return {
-                'decision': 'BLOCK',
-                'severity': 'B — HIGH',
-                'policy': matched_policy.get('id'),
-                'reason': f"Método HTTP '{method}' não permitido para este endpoint. Métodos permitidos: {allowed_methods}",
-                'file': filepath,
-                'line': line,
-                'details': details + [f"✗ Método {method} é inválido."]
-            }
-        details.append(f"✓ Método {method} autorizado")
-
-        # 2. Validate Authentication
-        auth_spec = matched_policy.get('authentication', {})
-        if auth_spec.get('required', False):
-            req_creds = matched_policy.get('required_credentials', [])
-            auth_type = auth_spec.get('type', 'Bearer')
-
-            # Check headers or env variables for required auth
-            has_auth = False
-            # Normalize headers keys
-            norm_headers = {k.lower(): str(v) for k, v in headers.items()}
-            
-            if 'authorization' in norm_headers or 'x-amz-access-token' in norm_headers:
-                has_auth = True
             else:
-                # Check environment variables
-                for cred in req_creds:
-                    if os.getenv(cred) or os.getenv(cred.upper()):
-                        has_auth = True
+                endpoint_pattern = policy.get('endpoint_pattern')
+                if endpoint_pattern and re.search(endpoint_pattern, path):
+                    matched_policy = policy
+                    break
+                tmpl = policy.get('path_template', '')
+                if tmpl:
+                    is_match, p_params = match_path_template(tmpl, path)
+                    if is_match:
+                        matched_policy = policy
+                        extracted_path_params = p_params
                         break
 
-            if not has_auth:
-                return {
-                    'decision': 'BLOCK',
-                    'severity': 'B — HIGH',
-                    'policy': matched_policy.get('id'),
-                    'reason': f"Autenticação obrigatória ausente ({auth_type}). Credenciais requeridas: {req_creds}",
-                    'file': filepath,
-                    'line': line,
-                    'details': details + [f"✗ Autenticação {auth_type} ausente."]
-                }
-            details.append(f"✓ Autenticação {auth_type} válida")
-        else:
-            details.append("✓ Autenticação não requerida")
+        if not matched_policy:
+            return PolicyResult({
+                'status': 'BLOCK',
+                'decision': 'BLOCK',
+                'severity': 'C — HIGH',
+                'reason': f"Endpoint '{path}' não autorizado. Nenhum esquema correspondente encontrado em policies/.",
+                'file': filepath,
+                'line': line,
+                'details': [f"✗ Endpoint não cadastrado em policies/: {path}"]
+            })
 
-        # 3. Validate Parameters
-        param_spec = matched_policy.get('parameters', {})
-        req_params = param_spec.get('required', [])
-        for req_p in req_params:
-            if req_p not in combined_params or not combined_params[req_p]:
-                return {
+        details = [f"OK Endpoint identificado: {matched_policy.get('name', matched_policy.get('id'))}"]
+
+        allowed_methods = matched_policy.get('allowed_methods')
+        if not allowed_methods and matched_endpoint_spec:
+            allowed_methods = matched_endpoint_spec.get('methods', ['GET'])
+        if not allowed_methods:
+            allowed_methods = ['GET']
+
+        if method not in allowed_methods:
+            return PolicyResult({
+                'status': 'BLOCK',
+                'decision': 'BLOCK',
+                'severity': 'C — HIGH',
+                'policy': matched_policy.get('id'),
+                'reason': f"Método HTTP '{method}' não é permitido para o endpoint '{path}'. Permitidos: {allowed_methods}",
+                'file': filepath,
+                'line': line,
+                'details': details + [f"✗ Método '{method}' não permitido."]
+            })
+        details.append(f"OK Método {method} autorizado")
+
+        auth_required = matched_policy.get('auth_required')
+        if auth_required is None:
+            auth_spec = matched_policy.get('authentication', {})
+            auth_required = auth_spec.get('required', False)
+
+        if auth_required:
+            auth_header = headers.get('Authorization') or headers.get('authorization') or headers.get('x-amz-access-token')
+            if not auth_header:
+                return PolicyResult({
+                    'status': 'BLOCK',
                     'decision': 'BLOCK',
                     'severity': 'C — HIGH',
                     'policy': matched_policy.get('id'),
-                    'reason': f"Parâmetro obrigatório ausente: '{req_p}'",
+                    'reason': f"Autenticação obrigatoria ausente para endpoint '{path}'",
+                    'file': filepath,
+                    'line': line,
+                    'details': details + ["✗ Cabeçalho de autenticação ausente."]
+                })
+            details.append("OK Autenticação fornecida")
+        else:
+            details.append("OK Autenticação não requerida")
+
+        param_spec = matched_policy.get('parameters', {})
+        req_query_params = param_spec.get('required', [])
+        for req_p in req_query_params:
+            if req_p not in query_params or not query_params[req_p]:
+                return PolicyResult({
+                    'status': 'BLOCK',
+                    'decision': 'BLOCK',
+                    'severity': 'C — HIGH',
+                    'policy': matched_policy.get('id'),
+                    'reason': f"Parametro obrigatorio ausente: '{req_p}'",
                     'file': filepath,
                     'line': line,
                     'details': details + [f"✗ Parâmetro '{req_p}' ausente."]
-                }
-            details.append(f"✓ Parâmetro obrigatório '{req_p}' fornecido")
+                })
+            details.append(f"OK Parâmetro '{req_p}' fornecido")
 
-        # 4. Check Path Parameters
-        req_path_params = param_spec.get('path', [])
-        for path_p in req_path_params:
-            if path_p not in extracted_path_params or not extracted_path_params[path_p]:
-                return {
-                    'decision': 'BLOCK',
-                    'severity': 'C — HIGH',
-                    'policy': matched_policy.get('id'),
-                    'reason': f"Parâmetro de caminho ausente ou inválido: '{path_p}'",
-                    'file': filepath,
-                    'line': line,
-                    'details': details + [f"✗ Parâmetro de caminho '{path_p}' inválido."]
-                }
-
-        # ALL CHECKS PASSED -> ALLOW
-        return {
+        return PolicyResult({
+            'status': 'ALLOW',
             'decision': 'ALLOW',
             'severity': 'INFO',
             'policy': matched_policy.get('id'),
             'reason': 'Requisição em conformidade com as políticas do API Guardian.',
             'file': filepath,
             'line': line,
-            'details': details + ["✓ Todas as validações concluídas com sucesso."]
-        }
+            'details': details + ["OK Todas as validações concluídas com sucesso."]
+        })

@@ -1,0 +1,22 @@
+id: ml_item_description
+name: Mercado Livre Item Description
+provider: mercado_livre
+base_urls:
+  - https://api.mercadolibre.com
+  - https://api.mercadolivre.com
+endpoints:
+  - path: /items/{item_id}/description
+    methods:
+      - GET
+authentication:
+  required: false
+parameters:
+  path:
+    - item_id
+security:
+  allow_hardcoded_credentials: false
+decision:
+  unknown_endpoint: BLOCK
+  invalid_method: BLOCK
+  missing_parameter: BLOCK
+  hardcoded_secret: BLOCK

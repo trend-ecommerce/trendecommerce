@@ -1,0 +1,22 @@
+id: ml_seller_reputation
+name: Mercado Livre Seller Reputation
+provider: mercado_livre
+base_urls:
+  - https://api.mercadolibre.com
+  - https://api.mercadolivre.com
+endpoints:
+  - path: /users/{user_id}
+    methods:
+      - GET
+authentication:
+  required: false
+parameters:
+  path:
+    - user_id
+security:
+  allow_hardcoded_credentials: false
+decision:
+  unknown_endpoint: BLOCK
+  invalid_method: BLOCK
+  missing_parameter: BLOCK
+  hardcoded_secret: BLOCK
