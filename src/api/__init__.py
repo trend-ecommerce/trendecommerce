@@ -1,0 +1,4 @@
+"""Módulo de API do TrendEcommerce AI."""
+from .router import api_router
+
+__all__ = ["api_router"]
