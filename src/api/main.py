@@ -87,3 +87,76 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ==========================================
+# Inclusão dos Routers REST
+# ==========================================
+API_PREFIX = "/api/v1"
+app.include_router(auth_router, prefix=API_PREFIX)
+app.include_router(auth_router, prefix="/api")
+app.include_router(products_router, prefix=API_PREFIX)
+app.include_router(forecast_router, prefix=API_PREFIX)
+app.include_router(trends_router, prefix=API_PREFIX)
+app.include_router(opportunity_router, prefix=API_PREFIX)
+
+
+# ==========================================
+# Servir Frontend Estático
+# ==========================================
+frontend_dir = Path(__file__).parent.parent.parent / "frontend"
+if frontend_dir.exists():
+    app.mount("/app", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+
+
+@app.get("/", tags=["Health & Status"], summary="Status e Redirecionamento da API")
+def root():
+    """Redireciona para o frontend ou retorna status da API."""
+    if frontend_dir.exists():
+        return RedirectResponse(url="/app/#/ia-preditiva")
+    return {
+        "system": "TrendCommerce AI API",
+        "status": "online",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
+
+@app.get("/api/v1/health", tags=["Health & Status"], summary="Health check da API")
+def health_check():
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "model": "xgboost-demand-regressor"
+    }
+
+
+@app.api_route("/api/v1/admin/reseed", methods=["GET", "POST"], tags=["Admin"], summary="Recarregar catálogo e histórico inicial")
+def reseed_database():
+    """Injeta ou sincroniza o catálogo completo de 89 produtos e 8.731 históricos diários."""
+    from src.database.seed_loader import seed_database_if_empty
+    db_manager = get_db_instance()
+    with db_manager.session() as session:
+        seed_database_if_empty(session)
+        from src.database.models import Product, SalesHistory
+        prod_count = session.query(Product).count()
+        sales_count = session.query(SalesHistory).count()
+    return {
+        "status": "success",
+        "message": "Catálogo e histórico sincronizados com sucesso!",
+        "total_products": prod_count,
+        "total_sales_history": sales_count
+    }
+
+
+@app.get("/api/v1/debug/status", tags=["Admin"], summary="Status detalhado do banco de dados")
+def debug_status():
+    from src.database.models import Product, SalesHistory, User
+    db_manager = get_db_instance()
+    with db_manager.session() as session:
+        return {
+            "db_type": "postgresql" if "postgres" in db_manager._database_url else "sqlite",
+            "products_count": session.query(Product).count(),
+            "sales_history_count": session.query(SalesHistory).count(),
+            "users_count": session.query(User).count()
+        }
