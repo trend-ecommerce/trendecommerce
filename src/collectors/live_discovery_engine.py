@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/live_discovery_engine.py
-```
-
-```python
 """Motor de Descoberta e Coleta em Tempo Real — Amazon e Mercado Livre.
 
 Implementa a Estratégia de Mediana de Mercado em Tempo Real com Filtro de Outliers (IQR):

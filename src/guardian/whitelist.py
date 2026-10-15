@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/guardian/whitelist.py
-```
-
-```python
 """Whitelist de APIs autorizadas para o TrendCommerce AI.
 
 Define quais endpoints podem ser acessados pelo sistema.

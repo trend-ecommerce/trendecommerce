@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/base_collector.py
-```
-
-```python
 """Classe base abstrata para todos os coletores de dados.
 
 Define a interface padrão que todos os coletores devem implementar.

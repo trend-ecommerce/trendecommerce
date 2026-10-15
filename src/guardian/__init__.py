@@ -1,10 +1,3 @@
-
-```bash
-# Caminho no novo repositório:
-# src/guardian/__init__.py
-```
-
-```python
 """API Guardian - Camada de segurança e conformidade do TrendCommerce AI.
 
 O Guardian funciona como uma camada de fiscalização das integrações,

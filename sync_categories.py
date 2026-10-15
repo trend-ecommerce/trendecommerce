@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# sync_categories.py
-```
-
-```python
 """Script de Sincronização Massiva de Catálogo (Amazon & Mercado Livre).
 
 Varre automaticamente as principais categorias do mercado e importa centenas
@@ -53,5 +47,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-```

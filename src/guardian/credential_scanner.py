@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/guardian/credential_scanner.py
-```
-
-```python
 """Scanner de credenciais hardcoded no código-fonte.
 
 Identifica padrões de credenciais expostas diretamente no código,

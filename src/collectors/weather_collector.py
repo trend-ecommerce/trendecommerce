@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/weather_collector.py
-```
-
-```python
 """Coletor de Dados Climáticos e Sazonalidade de Temperatura.
 
 Integra OpenWeatherMap / WeatherAPI com gerador de contexto climático

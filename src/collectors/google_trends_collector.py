@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/google_trends_collector.py
-```
-
-```python
 """Coletor de dados de tendências de pesquisa.
 
 NOTA IMPORTANTE: O Google Trends não disponibiliza uma API pública

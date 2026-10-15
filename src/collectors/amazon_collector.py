@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/amazon_collector.py
-```
-
-```python
 """Coletor de dados da Amazon SP-API.
 
 Utiliza a Amazon Selling Partner API para coletar dados de
