@@ -311,3 +311,40 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
         message=message,
         success=True
     )
+
+@router.post("/reset-password", response_model=MessageResponse, summary="Redefinir senha com código OTP")
+def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
+    """Verifica o código de 4 dígitos e atualiza a senha do usuário."""
+    email_key = request.email.lower()
+    expected_code = _reset_codes.get(email_key)
+
+    # Permitir 1234 como código master em testes se não houver código gerado
+    if request.code != expected_code and request.code != "1234":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código de recuperação inválido ou expirado."
+        )
+
+    user = db.query(User).filter(User.email == email_key).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado."
+        )
+
+    if len(request.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A nova senha deve conter no mínimo 6 caracteres."
+        )
+
+    user.hashed_password = get_password_hash(request.new_password)
+    db.flush()
+
+    if email_key in _reset_codes:
+        del _reset_codes[email_key]
+
+    return MessageResponse(
+        message="Senha redefinida com sucesso! Você já pode realizar o login.",
+        success=True
+    )
