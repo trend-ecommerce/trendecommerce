@@ -962,3 +962,6 @@ class LiveDiscoveryEngine:
             db.add(history_entry)
 
         db.flush()
+
+# Instância global reutilizável
+live_discovery = LiveDiscoveryEngine()
