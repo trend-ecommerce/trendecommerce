@@ -227,3 +227,316 @@ Se você não solicitou a recuperação de senha, nenhuma ação é necessária.
     </div>
 </body>
 </html>
+
+"""
+
+        msg_alternative.attach(MIMEText(text_content, "plain", "utf-8"))
+        msg_alternative.attach(MIMEText(html_content, "html", "utf-8"))
+
+        # Anexar a Logo oficial como CID inline
+        logo_paths = [
+            Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "assets" / "logo.png",
+            Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "img" / "logo.png",
+            Path("frontend/assets/logo.png"),
+            Path("frontend/img/logo.png")
+        ]
+        
+        logo_attached = False
+        for path in logo_paths:
+            if path.exists():
+                try:
+                    with open(path, "rb") as img_file:
+                        img_data = img_file.read()
+                        mime_img = MIMEImage(img_data, name="logo.png")
+                        mime_img.add_header("Content-ID", "<trendecommerce_logo>")
+                        mime_img.add_header("Content-Disposition", "inline", filename="logo.png")
+                        msg_root.attach(mime_img)
+                        logo_attached = True
+                        break
+                except Exception as img_err:
+                    logger.warning(f"Não foi possível carregar logo em {path}: {img_err}")
+
+        # Conectar via SSL (Porta 465) ou STARTTLS (Porta 587) com fallback automático
+        if smtp_port == 465:
+            import ssl
+            ssl_context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(smtp_host, 465, context=ssl_context, timeout=12) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, [to_email], msg_root.as_string())
+        else:
+            try:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_user, [to_email], msg_root.as_string())
+            except Exception as tls_err:
+                logger.warning(f"Tentando fallback para SSL Porta 465 após erro na {smtp_port}: {tls_err}")
+                import ssl
+                ssl_context = ssl.create_default_context()
+                with smtplib.SMTP_SSL(smtp_host, 465, context=ssl_context, timeout=12) as server:
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_user, [to_email], msg_root.as_string())
+
+        logger.info(f"E-mail com código OTP enviado com sucesso de {smtp_user} para: {to_email}")
+        return True, "E-mail enviado com sucesso!"
+
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"Erro de autenticação SMTP: {e}")
+        return False, "Falha de autenticação no servidor de e-mail (usuário ou senha incorretos)."
+    except Exception as e:
+        logger.error(f"Erro ao enviar e-mail para {to_email}: {e}")
+        return False, f"Erro no envio do e-mail: {str(e)}"
+
+
+def send_google_verification_email(to_email: str, code: str) -> tuple[bool, str]:
+    """Envia um e-mail com código OTP para validação da Conta Google."""
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "465"))
+    smtp_user = os.getenv("SMTP_USER", "trendeccomerceai@gmail.com").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").replace(" ", "").strip()
+    from_name = os.getenv("EMAIL_FROM_NAME", "TrendCommerce AI").strip()
+
+    if not smtp_password:
+        logger.warning(
+            f"Senha de aplicativo SMTP (SMTP_PASSWORD) não configurada para {smtp_user}."
+        )
+        return False, "Servidor de envio de e-mail não configurado (SMTP_PASSWORD ausente)."
+
+    try:
+        msg_root = MIMEMultipart("related")
+        msg_root["Subject"] = f"🔐 {code} é o seu código de verificação Google — TrendCommerce AI"
+        msg_root["From"] = f"{from_name} <{smtp_user}>"
+        msg_root["To"] = to_email
+        msg_root["Date"] = formatdate(localtime=True)
+        msg_root["Message-ID"] = make_msgid(domain="gmail.com")
+
+        msg_alternative = MIMEMultipart("alternative")
+        msg_root.attach(msg_alternative)
+
+        text_content = f"""TrendCommerce AI - Verificação de Conta Google
+
+Seu código de verificação Google é: {code}
+
+Use este código para confirmar a propriedade do seu e-mail e autenticar com segurança no TrendCommerce AI.
+
+⚠️ ATENÇÃO DE SEGURANÇA:
+NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM.
+A equipe do TrendCommerce AI NUNCA solicitará seu código de segurança.
+
+⏱️ Este código expira em 15 minutos.
+© 2026 TrendCommerce AI — Inteligência Preditiva de Mercado
+"""
+
+        html_content = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificação Google - TrendCommerce AI</title>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            background-color: #040d1a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: #ffffff;
+        }}
+        .wrapper {{
+            width: 100%;
+            background-color: #040d1a;
+            padding: 30px 10px;
+        }}
+        .container {{
+            max-width: 540px;
+            margin: 0 auto;
+            background: #07192e;
+            border: 1px solid #00b4d8;
+            border-radius: 16px;
+            padding: 36px 28px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7), 0 0 25px rgba(0, 180, 216, 0.2);
+        }}
+        .header {{
+            text-align: center;
+            margin-bottom: 24px;
+        }}
+        .logo-img {{
+            max-height: 75px;
+            width: auto;
+        }}
+        .logo-title {{
+            margin: 12px 0 2px 0;
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #ffffff;
+        }}
+        .logo-accent {{
+            color: #00d4ff;
+        }}
+        .subtitle {{
+            font-size: 11px;
+            font-weight: 700;
+            color: #38bdf8;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }}
+        .card-body {{
+            background: #0b223d;
+            border: 1px solid rgba(0, 180, 216, 0.35);
+            border-radius: 12px;
+            padding: 24px 20px;
+            text-align: center;
+            margin-bottom: 24px;
+        }}
+        .instructions {{
+            color: #cbd5e1;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0 0 20px 0;
+        }}
+        .otp-box {{
+            display: inline-block;
+            background: #05162b;
+            border: 2px solid #00f0ff;
+            color: #00f0ff;
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: 8px;
+            padding: 12px 28px;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+            margin-bottom: 16px;
+            font-family: 'Courier New', Courier, monospace;
+        }}
+        .expiry {{
+            color: #94a3b8;
+            font-size: 12px;
+            font-weight: 500;
+        }}
+        .security-alert {{
+            background: rgba(220, 38, 38, 0.12);
+            border: 1px solid #ef4444;
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin-bottom: 24px;
+            text-align: left;
+        }}
+        .security-title {{
+            color: #f87171;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }}
+        .security-text {{
+            color: #fecaca;
+            font-size: 12px;
+            line-height: 1.5;
+            margin: 0;
+        }}
+        .footer {{
+            text-align: center;
+            color: #64748b;
+            font-size: 11px;
+            line-height: 1.5;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding-top: 18px;
+            margin-top: 20px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="header">
+                <div>
+                    <img class="logo-img" src="cid:trendecommerce_logo" alt="TrendCommerce AI Logo" />
+                </div>
+                <h1 class="logo-title"><span class="logo-accent">Trend</span>Commerce AI</h1>
+                <div class="subtitle">AUTENTICAÇÃO CONTA GOOGLE</div>
+            </div>
+
+            <div class="card-body">
+                <p class="instructions">
+                    Olá! Recebemos uma solicitação para acessar sua conta através do Google.<br>
+                    Utilize o código de validação de 4 dígitos abaixo para autenticar:
+                </p>
+
+                <div class="otp-box">{code}</div>
+
+                <div class="expiry">⏱️ Este código expira em <strong>15 minutos</strong></div>
+            </div>
+
+            <div class="security-alert">
+                <div class="security-title">⚠️ NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM</div>
+                <p class="security-text">
+                    Este código confirma que você é o titular desta conta Google. A equipe do <strong>TrendCommerce AI</strong> nunca entrará em contato solicitando seu código de acesso.
+                </p>
+            </div>
+
+            <div class="footer">
+                <p>Se você não tentou fazer login com o Google no TrendCommerce AI, desconsidere este e-mail.</p>
+                <p>© 2026 TrendCommerce AI — Inteligência Preditiva de Mercado</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        msg_alternative.attach(MIMEText(text_content, "plain", "utf-8"))
+        msg_alternative.attach(MIMEText(html_content, "html", "utf-8"))
+
+        logo_paths = [
+            Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "assets" / "logo.png",
+            Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "img" / "logo.png",
+            Path("frontend/assets/logo.png"),
+            Path("frontend/img/logo.png")
+        ]
+        
+        for path in logo_paths:
+            if path.exists():
+                try:
+                    with open(path, "rb") as img_file:
+                        img_data = img_file.read()
+                        mime_img = MIMEImage(img_data, name="logo.png")
+                        mime_img.add_header("Content-ID", "<trendecommerce_logo>")
+                        mime_img.add_header("Content-Disposition", "inline", filename="logo.png")
+                        msg_root.attach(mime_img)
+                        break
+                except Exception as img_err:
+                    logger.warning(f"Não foi possível carregar logo em {path}: {img_err}")
+
+        if smtp_port == 465:
+            import ssl
+            ssl_context = ssl.create_default_context()
+            with smtplib.SMTP_SSL(smtp_host, 465, context=ssl_context, timeout=12) as server:
+                server.login(smtp_user, smtp_password)
+                server.sendmail(smtp_user, [to_email], msg_root.as_string())
+        else:
+            try:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as server:
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_user, [to_email], msg_root.as_string())
+            except Exception:
+                import ssl
+                ssl_context = ssl.create_default_context()
+                with smtplib.SMTP_SSL(smtp_host, 465, context=ssl_context, timeout=12) as server:
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_user, [to_email], msg_root.as_string())
+
+        logger.info(f"E-mail de validação Google enviado com sucesso para: {to_email}")
+        return True, "E-mail de validação enviado com sucesso!"
+
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"Erro de autenticação SMTP: {e}")
+        return False, "Falha de autenticação no servidor de e-mail (usuário ou senha incorretos)."
+    except Exception as e:
+        logger.error(f"Erro ao enviar e-mail Google para {to_email}: {e}")
+        return False, f"Erro no envio do e-mail: {str(e)}"
