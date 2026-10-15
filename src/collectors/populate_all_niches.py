@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/populate_all_niches.py
-```
-
-```python
 """Script de Ingestão e Sincronização Multi-Nicho — TrendCommerce AI.
 
 Coleta produtos reais de 10 grandes nichos do e-commerce (Mercado Livre e Amazon)

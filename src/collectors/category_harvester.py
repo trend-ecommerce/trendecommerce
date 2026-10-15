@@ -1,10 +1,3 @@
-
-```bash
-# Caminho no novo repositório:
-# src/collectors/category_harvester.py
-```
-
-```python
 """Coletor e Sincronizador de Categorias do Mercado Livre e Amazon — TrendCommerce AI.
 
 Varre os principais nichos de mercado, descobre produtos populares em tempo real

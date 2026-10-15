@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/mercadolivre_collector.py
-```
-
-```python
 """Coletor de dados da API do Mercado Livre.
 
 Endpoints utilizados:

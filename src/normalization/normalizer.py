@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/normalization/normalizer.py
-```
-
-```python
 """Normalização de dados de diferentes plataformas.
 
 Amazon, Mercado Livre e Google possuem estruturas e métricas

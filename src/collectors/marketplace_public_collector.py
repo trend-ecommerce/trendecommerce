@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/marketplace_public_collector.py
-```
-
-```python
 """Coletor de Dados Públicos do Mercado Livre.
 
 Coleta:

@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/live_tracker.py
-```
-
-```python
 """Rastreador de dados reais e gerador de snapshots de vendas.
 
 Utiliza a API pública do Mercado Livre para:

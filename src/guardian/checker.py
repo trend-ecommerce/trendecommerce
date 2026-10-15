@@ -1,10 +1,3 @@
-
-```bash
-# Caminho no novo repositório:
-# src/guardian/checker.py
-```
-
-```python
 """Checker de requisições HTTP.
 
 Monitora chamadas feitas através de bibliotecas HTTP (requests, httpx,

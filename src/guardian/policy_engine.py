@@ -1,10 +1,3 @@
-
-```bash
-# Caminho no novo repositório:
-# src/guardian/policy_engine.py
-```
-
-```python
 """Policy Engine do API Guardian.
 
 Motor de políticas que combina verificação de whitelist,

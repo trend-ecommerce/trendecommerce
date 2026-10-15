@@ -1,9 +1,3 @@
-```bash
-# Caminho no novo repositório:
-# src/collectors/__init__.py
-```
-
-```python
 """Módulo de coletores de dados do TrendCommerce AI.
 
 Responsável por acessar as APIs autorizadas e coletar dados

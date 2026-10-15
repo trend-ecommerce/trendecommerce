@@ -1,10 +1,3 @@
-
-```bash
-# Caminho no novo repositório:
-# src/collectors/macro_collector.py
-```
-
-```python
 """Coletor de Indicadores Macroeconômicos e Calendário Oficial.
 
 Integra:
