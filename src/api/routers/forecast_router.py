@@ -215,3 +215,155 @@ def get_forecast_summary(
 
 
 _ranking_cache: dict[int, tuple[float, ForecastRankingResponse]] = {}
+
+@router.get("/ranking", response_model=ForecastRankingResponse, summary="Ranking preditivo de produtos e categorias")
+def get_forecast_ranking(
+    horizon_days: int = Query(30, ge=7, le=30, description="Horizonte de projeção em dias"),
+    db: Session = Depends(get_db),
+    forecaster: FutureForecaster = Depends(get_ml_forecaster)
+):
+    """Retorna Top 7 produtos gerais e Top 5 produtos por categoria para os próximos 30 dias com explicabilidade."""
+    now_ts = time.time()
+    if horizon_days in _ranking_cache:
+        cached_time, cached_data = _ranking_cache[horizon_days]
+        if now_ts - cached_time < 180:  # 3 min cache
+            return cached_data
+
+    products = db.query(Product).filter(Product.is_active.is_(True)).all()
+    sales = db.query(SalesHistory).all()
+
+    if not products or not sales:
+        return ForecastRankingResponse(
+            horizon_days=horizon_days,
+            top_overall=[],
+            top_by_category={}
+        )
+
+    products_df = pd.DataFrame([
+        {
+            "product_id": p.id,
+            "title": p.title,
+            "category": p.category or "Geral",
+            "price": p.price or 100.0,
+            "platform": p.platform,
+            "external_id": p.external_id
+        }
+        for p in products
+    ])
+    sales_df = pd.DataFrame([
+        {
+            "product_id": s.product_id,
+            "date": s.date,
+            "quantity_sold": s.quantity_sold,
+            "price": s.price_at_date or 100.0,
+            "available_quantity": s.available_quantity or 50,
+            "platform": s.platform
+        }
+        for s in sales
+    ])
+
+    # Selecionar candidatos líderes por categoria (top 6 por volume histórico) para performance instantânea
+    sales_summary = sales_df.groupby("product_id")["quantity_sold"].sum().reset_index()
+    merged_candidates = products_df.merge(sales_summary, on="product_id", how="left").fillna(0)
+    
+    candidate_ids = set()
+    for _, cat_group in merged_candidates.groupby("category"):
+        top_in_cat = cat_group.sort_values("quantity_sold", ascending=False).head(6)
+        candidate_ids.update(top_in_cat["product_id"].tolist())
+
+    filtered_products_df = products_df[products_df["product_id"].isin(candidate_ids)]
+    forecasts = forecaster.forecast_all_products(filtered_products_df, sales_df, horizon_days=horizon_days)
+
+    # Ordenar por demanda e faturamento projetado
+    sorted_by_demand = sorted(forecasts, key=lambda x: x.total_predicted_units, reverse=True)
+
+    # Top 7 produtos gerais: Líderes Top 1 de cada nicho/categoria
+    seen_cats_overall = set()
+    top_overall = []
+    for f in sorted_by_demand:
+        cat = f.category or "Geral"
+        if cat not in seen_cats_overall:
+            seen_cats_overall.add(cat)
+            rank_num = len(top_overall) + 1
+            if rank_num == 1:
+                reason = f"Líder absoluto de demanda com {f.total_predicted_units} un e faturamento projetado de R$ {f.total_projected_revenue:,.2f} no horizonte de {horizon_days} dias."
+                driver = f"Líder Geral & Tração Máxima em {cat}"
+            elif rank_num in [2, 3]:
+                reason = f"Líder no nicho '{cat}' com altíssima velocidade de saída (~{f.daily_average:.1f} un/dia) e picos nos finais de semana."
+                driver = f"Líder no segmento de {cat}"
+            else:
+                reason = f"Produto #1 no nicho '{cat}' com performance consistente e margem de segurança estável."
+                driver = f"Destaque em {cat}"
+
+            top_overall.append(RankingForecastItem(
+                rank=rank_num,
+                product_id=f.product_id,
+                title=f.product_title,
+                category=f.category,
+                price=f.unit_price,
+                projected_units=f.total_predicted_units,
+                projected_revenue=f.total_projected_revenue,
+                rank_reason=reason,
+                key_driver=driver
+            ))
+            if len(top_overall) >= 7:
+                break
+
+    # Se ainda houver vagas para 7 e poucas categorias distintas, preenche com os próximos melhores
+    if len(top_overall) < 7:
+        seen_pids = {item.product_id for item in top_overall}
+        for f in sorted_by_demand:
+            if f.product_id not in seen_pids:
+                seen_pids.add(f.product_id)
+                top_overall.append(RankingForecastItem(
+                    rank=len(top_overall) + 1,
+                    product_id=f.product_id,
+                    title=f.product_title,
+                    category=f.category,
+                    price=f.unit_price,
+                    projected_units=f.total_predicted_units,
+                    projected_revenue=f.total_projected_revenue,
+                    rank_reason=f"Top performer com {f.total_predicted_units} unidades projetadas.",
+                    key_driver="Alta Tração de Demanda"
+                ))
+                if len(top_overall) >= 7:
+                    break
+
+    # Agrupar por categoria e pegar top 5 com justificativas
+    by_cat_dict = {}
+    for f in forecasts:
+        cat = f.category or "Geral"
+        if cat not in by_cat_dict:
+            by_cat_dict[cat] = []
+        by_cat_dict[cat].append(f)
+
+    top_by_category = {}
+    top_by_category["GERAIS"] = top_overall[:5]
+
+    for cat, list_items in by_cat_dict.items():
+        sorted_cat = sorted(list_items, key=lambda x: x.total_predicted_units, reverse=True)
+        top_by_category[cat] = [
+            RankingForecastItem(
+                rank=i + 1,
+                product_id=f.product_id,
+                title=f.product_title,
+                category=f.category,
+                price=f.unit_price,
+                projected_units=f.total_predicted_units,
+                projected_revenue=f.total_projected_revenue,
+                rank_reason=f"Top #{i+1} da categoria '{cat}' com média de {f.daily_average:.1f} un/dia e receita de R$ {f.total_projected_revenue:,.2f}.",
+                key_driver=f"Liderança no segmento de {cat}"
+            )
+            for i, f in enumerate(sorted_cat[:5])
+        ]
+
+    response_obj = ForecastRankingResponse(
+        horizon_days=horizon_days,
+        top_overall=top_overall,
+        top_by_category=top_by_category
+    )
+    _ranking_cache[horizon_days] = (now_ts, response_obj)
+    return response_obj
+
+
+from src.schemas.forecast_schema import CompareForecastRequest, CompareForecastResponse
