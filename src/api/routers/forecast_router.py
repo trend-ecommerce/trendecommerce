@@ -367,3 +367,93 @@ def get_forecast_ranking(
 
 
 from src.schemas.forecast_schema import CompareForecastRequest, CompareForecastResponse
+
+@router.post("/compare", response_model=CompareForecastResponse, summary="Comparador Preditivo Lado a Lado (Produto A vs Produto B)")
+def compare_products_forecast(
+    request: CompareForecastRequest,
+    db: Session = Depends(get_db),
+    forecaster: FutureForecaster = Depends(get_ml_forecaster)
+):
+    """Compara o desempenho preditivo de dois produtos concorrentes para os próximos 7, 14 ou 30 dias."""
+    prod_a = db.query(Product).filter(Product.id == request.product_id_a).first()
+    prod_b = db.query(Product).filter(Product.id == request.product_id_b).first()
+
+    if not prod_a or not prod_b:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Um ou ambos os produtos não foram encontrados.")
+
+    sales_a = db.query(SalesHistory).filter(SalesHistory.product_id == prod_a.id).order_by(SalesHistory.date.asc()).all()
+    sales_b = db.query(SalesHistory).filter(SalesHistory.product_id == prod_b.id).order_by(SalesHistory.date.asc()).all()
+
+    if not sales_a or not sales_b:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Histórico de vendas insuficiente para comparação.")
+
+    # Converter para Series e DataFrames
+    pa_series = pd.Series({"product_id": prod_a.id, "title": prod_a.title, "category": prod_a.category or "Geral", "price": prod_a.price or 100.0, "base_price": prod_a.price or 100.0, "platform": prod_a.platform})
+    pb_series = pd.Series({"product_id": prod_b.id, "title": prod_b.title, "category": prod_b.category or "Geral", "price": prod_b.price or 100.0, "base_price": prod_b.price or 100.0, "platform": prod_b.platform})
+
+    sa_df = pd.DataFrame([{"product_id": s.product_id, "date": s.date, "quantity_sold": s.quantity_sold, "price": s.price_at_date or prod_a.price or 100.0, "available_quantity": s.available_quantity or 50, "platform": s.platform} for s in sales_a])
+    sb_df = pd.DataFrame([{"product_id": s.product_id, "date": s.date, "quantity_sold": s.quantity_sold, "price": s.price_at_date or prod_b.price or 100.0, "available_quantity": s.available_quantity or 50, "platform": s.platform} for s in sales_b])
+
+    fa = forecaster.forecast_product(pa_series, sa_df, horizon_days=request.horizon_days)
+    fb = forecaster.forecast_product(pb_series, sb_df, horizon_days=request.horizon_days)
+
+    res_a = ProductForecastResponse(
+        product_id=fa.product_id,
+        product_title=fa.product_title,
+        category=fa.category,
+        unit_price=fa.unit_price,
+        horizon_days=fa.horizon_days,
+        start_date=fa.start_date,
+        end_date=fa.end_date,
+        total_predicted_units=fa.total_predicted_units,
+        min_predicted_units=fa.min_predicted_units,
+        max_predicted_units=fa.max_predicted_units,
+        total_projected_revenue=fa.total_projected_revenue,
+        daily_average=fa.daily_average,
+        recommended_stock_buffer=fa.recommended_stock_buffer,
+        days=[DailyForecastItem(date=d.date, day_name=d.day_name, predicted_demand=d.predicted_demand, confidence_min=d.confidence_min, confidence_max=d.confidence_max, projected_revenue=d.projected_revenue) for d in fa.days],
+        explanation=fa.explanation
+    )
+
+    res_b = ProductForecastResponse(
+        product_id=fb.product_id,
+        product_title=fb.product_title,
+        category=fb.category,
+        unit_price=fb.unit_price,
+        horizon_days=fb.horizon_days,
+        start_date=fb.start_date,
+        end_date=fb.end_date,
+        total_predicted_units=fb.total_predicted_units,
+        min_predicted_units=fb.min_predicted_units,
+        max_predicted_units=fb.max_predicted_units,
+        total_projected_revenue=fb.total_projected_revenue,
+        daily_average=fb.daily_average,
+        recommended_stock_buffer=fb.recommended_stock_buffer,
+        days=[DailyForecastItem(date=d.date, day_name=d.day_name, predicted_demand=d.predicted_demand, confidence_min=d.confidence_min, confidence_max=d.confidence_max, projected_revenue=d.projected_revenue) for d in fb.days],
+        explanation=fb.explanation
+    )
+
+    # Análise comparativa
+    demand_diff = abs(fa.total_predicted_units - fb.total_predicted_units)
+    rev_diff = round(abs(fa.total_projected_revenue - fb.total_projected_revenue), 2)
+    
+    demand_leader = prod_a.title if fa.total_predicted_units >= fb.total_predicted_units else prod_b.title
+    revenue_leader = prod_a.title if fa.total_projected_revenue >= fb.total_projected_revenue else prod_b.title
+
+    if fa.total_projected_revenue >= fb.total_projected_revenue and fa.total_predicted_units >= fb.total_predicted_units:
+        verdict = f"🏆 O produto '{prod_a.title}' é a opção superior tanto em volume de vendas (+{demand_diff} un) quanto em faturamento projetado (+R$ {rev_diff:,.2f})."
+    elif fb.total_projected_revenue >= fa.total_projected_revenue and fb.total_predicted_units >= fa.total_predicted_units:
+        verdict = f"🏆 O produto '{prod_b.title}' é a opção superior tanto em volume de vendas (+{demand_diff} un) quanto em faturamento projetado (+R$ {rev_diff:,.2f})."
+    else:
+        verdict = f"⚖️ Veredito Misto: '{demand_leader}' lidera em giro de unidades (+{demand_diff} un), enquanto '{revenue_leader}' entrega maior retorno financeiro bruto (+R$ {rev_diff:,.2f})."
+
+    return CompareForecastResponse(
+        horizon_days=request.horizon_days,
+        product_a=res_a,
+        product_b=res_b,
+        revenue_difference=rev_diff,
+        revenue_leader=revenue_leader,
+        demand_difference=demand_diff,
+        demand_leader=demand_leader,
+        verdict=verdict
+    )
