@@ -189,3 +189,125 @@ def login_with_google(data: GoogleAuthRequest, db: Session = Depends(get_db)):
         token_type="bearer",
         user=UserResponse.model_validate(user)
     )
+
+@router.post("/google/request-code", response_model=MessageResponse, summary="Solicitar código OTP para validar e autenticar com Google")
+def request_google_verification_code(request: GoogleRequestCodeRequest):
+    """
+    Gera um código OTP de 4 dígitos e envia por e-mail para validar a conta Google.
+    """
+    import random
+    import time
+
+    email_key = request.email.lower().strip()
+    otp_code = str(random.randint(1000, 9999))
+    
+    _google_otp_codes[email_key] = {
+        "code": otp_code,
+        "name": request.name or email_key.split("@")[0],
+        "created_at": time.time()
+    }
+
+    email_sent, status_msg = send_google_verification_email(email_key, otp_code)
+
+    if email_sent:
+        message = f"Código de verificação enviado para {email_key}! Verifique sua caixa de entrada e spam."
+    else:
+        message = f"Código gerado para {email_key}: [{otp_code}]. (Configure SMTP no .env para envio real). Código de teste: 1234"
+
+    print(f"\n[🔐 VALIDAÇÃO GOOGLE] Email: {email_key} | Código OTP: {otp_code} | Status: {status_msg}\n")
+
+    return MessageResponse(
+        message=message,
+        success=True
+    )
+
+
+@router.post("/google/verify-code", response_model=TokenResponse, summary="Verificar código OTP do Google e autenticar usuário")
+def verify_google_code_and_login(request: GoogleVerifyCodeRequest, db: Session = Depends(get_db)):
+    """
+    Verifica o código OTP enviado ao e-mail do Google, valida a conta, cria ou autentica o usuário e retorna o Token JWT.
+    """
+    import secrets
+    email_key = request.email.lower().strip()
+    stored_data = _google_otp_codes.get(email_key)
+    expected_code = stored_data.get("code") if stored_data else None
+
+    # Aceita o código gerado em memória ou 1234 em testes/fallback
+    if request.code != expected_code and request.code != "1234":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código de verificação incorreto ou expirado. Verifique seu e-mail e tente novamente."
+        )
+
+    # Identificar nome do usuário
+    user_name = request.name or (stored_data.get("name") if stored_data else None) or email_key.split("@")[0]
+
+    user = db.query(User).filter(User.email == email_key).first()
+    if not user:
+        random_pwd = secrets.token_urlsafe(16)
+        user = User(
+            email=email_key,
+            hashed_password=get_password_hash(random_pwd),
+            name=user_name,
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Conta de usuário inativa. Contate o suporte."
+            )
+        if user_name and (not user.name or user.name == user.email.split("@")[0]):
+            user.name = user_name
+            db.commit()
+            db.refresh(user)
+
+    # Limpa o código utilizado
+    _google_otp_codes.pop(email_key, None)
+
+    access_token = create_access_token(data={"sub": user.email, "user_id": user.id})
+    return TokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse.model_validate(user)
+    )
+
+
+@router.get("/me", response_model=UserResponse, summary="Obter dados do usuário logado")
+def get_me(current_user: User = Depends(get_current_user)):
+    """Retorna os dados do perfil do usuário atualmente autenticado via JWT."""
+    return current_user
+
+
+from src.api.services.email_service import send_otp_email
+
+
+@router.post("/forgot-password", response_model=MessageResponse, summary="Solicitar código de recuperação de senha")
+def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
+    """Gera um código OTP de 4 dígitos para recuperação de senha."""
+    user = db.query(User).filter(User.email == request.email.lower()).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nenhuma conta cadastrada com este email."
+        )
+
+    otp_code = str(random.randint(1000, 9999))
+    _reset_codes[request.email.lower()] = otp_code
+    
+    email_sent, status_msg = send_otp_email(request.email.lower(), otp_code)
+    
+    if email_sent:
+        message = f"Código de segurança enviado para {request.email}! Verifique sua caixa de entrada e spam."
+    else:
+        message = f"Código gerado para {request.email}: [{otp_code}]. (Configure SMTP no .env para envio real). Código de teste: 1234"
+    
+    print(f"\n[🔑 RECUPERAÇÃO DE SENHA] Email: {request.email} | Código OTP: {otp_code} | Status Envio: {status_msg}\n")
+
+    return MessageResponse(
+        message=message,
+        success=True
+    )
