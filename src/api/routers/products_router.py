@@ -278,4 +278,123 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
         sales_history=sales_history_list
     )
 
+@router.get("/{product_id}/history", response_model=List[SalesHistoryResponse], summary="Obter série temporal de vendas")
+def get_product_sales_history(
+    product_id: int,
+    days: int = Query(30, ge=7, le=365, description="Quantidade de dias históricos"),
+    db: Session = Depends(get_db)
+):
+    """Retorna os dados cronológicos de vendas para alimentação de gráficos no frontend."""
+    prod = db.query(Product).filter(Product.id == product_id).first()
+    if not prod:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produto não encontrado.")
 
+    sales = db.query(SalesHistory)\
+              .filter(SalesHistory.product_id == product_id)\
+              .order_by(SalesHistory.date.desc())\
+              .limit(days)\
+              .all()
+
+    history = []
+    for s in reversed(sales):
+        price = s.price_at_date or prod.price or 0.0
+        history.append(SalesHistoryResponse(
+            id=s.id,
+            product_id=s.product_id,
+            date=s.date,
+            quantity_sold=s.quantity_sold,
+            price_at_date=price,
+            available_quantity=s.available_quantity,
+            platform=s.platform,
+            revenue=round(s.quantity_sold * price, 2)
+        ))
+    return history
+
+
+class DiscoverLiveRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+class DiscoverLiveResponse(BaseModel):
+    query: str
+    total_found: int
+    products: List[ProductResponse]
+    message: str
+
+
+@router.post("/discover-live", response_model=DiscoverLiveResponse, summary="Buscar e importar produtos em tempo real da Amazon e Mercado Livre")
+def discover_live_products(
+    request: DiscoverLiveRequest,
+    db: Session = Depends(get_db)
+):
+    """Busca qualquer produto em tempo real nas APIs de e-commerce, cadastra no banco e prepara para a IA."""
+    from src.collectors.live_discovery_engine import live_discovery
+
+    query_str = request.query.strip()
+    if not query_str:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Informe um termo de busca.")
+
+    imported_prods = live_discovery.discover_and_import(query_str, db, max_items=request.limit)
+
+    if not imported_prods:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Produto não localizado ou sem comercialização ativa no Mercado Livre / Amazon (itens restritos pela ANVISA, medicamentos controlados ou termos sem catálogo oficial)."
+        )
+
+    items = []
+    for prod in imported_prods:
+        sales_agg = db.query(
+            func.sum(SalesHistory.quantity_sold).label("total_units"),
+            func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, prod.price or 0.0)).label("total_rev")
+        ).filter(SalesHistory.product_id == prod.id).first()
+
+        total_units = int(sales_agg.total_units or 0)
+        total_rev = float(sales_agg.total_rev or 0.0)
+
+        items.append(ProductResponse(
+            id=prod.id,
+            external_id=prod.external_id,
+            platform=prod.platform,
+            title=prod.title,
+            category=prod.category,
+            price=prod.price,
+            currency=prod.currency,
+            condition=prod.condition,
+            url=prod.url,
+            attributes=prod.attributes,
+            is_active=prod.is_active,
+            created_at=prod.created_at,
+            total_sold_units=total_units,
+            total_revenue=round(total_rev, 2)
+        ))
+
+    return DiscoverLiveResponse(
+        query=query_str,
+        total_found=len(items),
+        products=items,
+        message=f"{len(items)} produto(s) sincronizados em tempo real com sucesso!"
+    )
+
+
+class SyncCategoriesResponse(BaseModel):
+    status: str
+    total_synced_products: int
+    sample_products: List[str]
+    message: str
+
+
+@router.post("/sync-categories", response_model=SyncCategoriesResponse, summary="Sincronizar massivamente as principais categorias do mercado")
+def sync_top_categories_endpoint(
+    limit_per_term: int = Query(2, ge=1, le=10, description="Quantidade por termo"),
+    db: Session = Depends(get_db)
+):
+    """Varre e importa os top produtos das 15 principais categorias do Mercado Livre e Amazon."""
+    from src.collectors.category_harvester import harvest_all_top_categories
+    result = harvest_all_top_categories(db, limit_per_term=limit_per_term)
+    return SyncCategoriesResponse(
+        status=result["status"],
+        total_synced_products=result["total_synced_products"],
+        sample_products=result["sample_products"],
+        message=f"{result['total_synced_products']} produtos do catálogo multi-canal sincronizados com sucesso!"
+    )
