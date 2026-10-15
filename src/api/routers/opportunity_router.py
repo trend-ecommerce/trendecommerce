@@ -110,3 +110,21 @@ def get_top_products_to_sell(
             for item in filtered
         ]
     }
+
+@router.get("/macro-indicators")
+def get_macro_indicators(db: Session = Depends(get_session)):
+    """Retorna os indicadores macroeconômicos e feriados ativos no sistema."""
+    indicators = db.query(MacroIndicator).order_by(MacroIndicator.date.desc()).limit(50).all()
+    return {
+        "count": len(indicators),
+        "indicators": [
+            {
+                "date": ind.date.strftime("%Y-%m-%d"),
+                "type": ind.indicator_type,
+                "value": ind.value,
+                "label": ind.label,
+                "source": ind.source
+            }
+            for ind in indicators
+        ]
+    }
