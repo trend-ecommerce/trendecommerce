@@ -1,26 +1,30 @@
-# 🚀 TrendCommerce AI
-
 <div align="center">
 
-![TrendCommerce AI Banner](frontend/img/favicon.png)
+  <img src="frontend/img/banner.png" alt="TrendCommerce AI Logo" width="750" style="max-width: 100%; height: auto; border-radius: 8px; margin-bottom: 20px;" />
 
-**Plataforma Fullstack de Inteligência Preditiva de Vendas, Governança de APIs e Análise Estratégica de Mercado para E-commerce**
+  # 🚀 TrendCommerce AI
 
-[![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![XGBoost](https://img.shields.io/badge/XGBoost-2.0+-eb6024.svg)](https://xgboost.readthedocs.io/)
-[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/Tests-81%20passed%20%7C%20100%25-brightgreen.svg)](tests/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+  <p><strong>Plataforma Fullstack de Inteligência Preditiva de Vendas, Governança de APIs e Análise Estratégica de Mercado para E-commerce</strong></p>
 
-[Visão Geral](#-visão-geral) •
-[Funcionalidades](#-funcionalidades-chave) •
-[Arquitetura](#-arquitetura-do-sistema) •
-[Instalação](#-instalação-e-configuração) •
-[Execução](#-como-executar) •
-[Endpoints da API](#-documentação-da-api-endpoints) •
-[Testes](#-qualidade-e-testes) •
-[Deploy](#-deploy)
+  <p>
+    <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue.svg" alt="Python Version" /></a>
+    <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI" /></a>
+    <a href="https://xgboost.readthedocs.io/"><img src="https://img.shields.io/badge/XGBoost-2.0+-eb6024.svg" alt="XGBoost" /></a>
+    <a href="https://www.sqlalchemy.org/"><img src="https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg" alt="SQLAlchemy" /></a>
+    <a href="tests/"><img src="https://img.shields.io/badge/Tests-81%20passed%20%7C%20100%25-brightgreen.svg" alt="Tests" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" /></a>
+  </p>
+
+  <p>
+    <a href="#-visão-geral">Visão Geral</a> •
+    <a href="#-funcionalidades-chave">Funcionalidades</a> •
+    <a href="#-arquitetura-do-sistema">Arquitetura</a> •
+    <a href="#-instalação-e-configuração">Instalação</a> •
+    <a href="#-como-executar">Como Executar</a> •
+    <a href="#-documentação-da-api-endpoints">Endpoints da API</a> •
+    <a href="#-qualidade-e-testes">Testes</a> •
+    <a href="#-deploy">Deploy</a>
+  </p>
 
 </div>
 
