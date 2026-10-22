@@ -1,7 +1,7 @@
 """Preditor de demanda usando o modelo XGBoost treinado."""
 
 import logging
-from typing import Optional
+from typing import Optional, Any
 import numpy as np
 import pandas as pd
 from .trainer import DemandTrainer
@@ -40,4 +40,14 @@ class DemandPredictor:
             "prediction": predictions,
             "lower_bound": lower_bound,
             "upper_bound": upper_bound,
+        }
+
+    def analyze_prediction(self, predictions: np.ndarray) -> dict[str, Any]:
+        """Gera análise estatística de um conjunto de previsões."""
+        preds = np.asarray(predictions, dtype=float)
+        return {
+            "mean_demand": float(np.mean(preds)) if len(preds) > 0 else 0.0,
+            "min_demand": float(np.min(preds)) if len(preds) > 0 else 0.0,
+            "max_demand": float(np.max(preds)) if len(preds) > 0 else 0.0,
+            "n_predictions": len(preds),
         }

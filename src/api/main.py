@@ -11,7 +11,6 @@ from src.api.dependencies import get_db_instance, get_password_hash
 from src.database.models import Base, User
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gerencia inicialização e encerramento da aplicação."""
@@ -52,7 +51,8 @@ async def lifespan(app: FastAPI):
             print(f"[TrendCommerce AI] Erro no warmup ML: {err}")
     yield
 
-    app = FastAPI(
+
+app = FastAPI(
     title="TrendCommerce AI - API REST",
     description="API de Integração Fullstack para Previsão de Demanda, Tendências de E-commerce e Autenticação com Inteligência Artificial (XGBoost).",
     version="1.0.0",

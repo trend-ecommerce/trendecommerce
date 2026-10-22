@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 import numpy as np
 import pandas as pd
 
@@ -23,6 +23,7 @@ class ValidationRow:
     error: float
     accuracy_pct: float
     status: str
+    hit_interval: bool = True
 
 
 @dataclass
@@ -77,6 +78,7 @@ class DemandComparator:
             abs_err = abs(error)
             
             acc = max(0.0, 100.0 - ((abs_err / actual * 100) if actual > 0 else (100.0 if abs_err > 1 else 0.0)))
+            hit = (abs_err <= max(1.0, actual * 0.25))
             status = "🎯 EXATO" if abs_err <= 1.0 else ("✅ NA MARGEM" if acc >= 75.0 else "❌ DESVIO")
             
             p_title = products_df[products_df["product_id"] == row["product_id"]]["title"].values
@@ -90,7 +92,8 @@ class DemandComparator:
                 predicted_demand=round(pred, 1),
                 error=round(error, 1),
                 accuracy_pct=round(acc, 1),
-                status=status
+                status=status,
+                hit_interval=hit
             ))
             
         y_true = np.array([r.actual_demand for r in validation_rows])
@@ -104,3 +107,20 @@ class DemandComparator:
             mae=round(float(np.mean(np.abs(y_true - y_pred))), 2),
             rows=validation_rows
         )
+
+    def format_terminal_table(self, report: ValidationReport) -> str:
+        """Formata o relatório de auditoria para o terminal."""
+        lines = [
+            "=" * 60,
+            "RELATÓRIO DE AUDITORIA (Real vs Previsto)",
+            "=" * 60,
+            f"Total de Previsões: {report.total_predictions}",
+            f"Taxa de Acerto na Faixa: {report.hit_rate_pct}%",
+            f"Acurácia Média: {report.mean_accuracy_pct}%",
+            f"RMSE: {report.rmse} | MAE: {report.mae}",
+            "-" * 60,
+        ]
+        for r in report.rows:
+            lines.append(f"{r.product_title} | Data: {r.target_date} | Real: {r.actual_demand} | Previsto: {r.predicted_demand} | Erro: {r.error} | {r.status}")
+        lines.append("=" * 60)
+        return "\n".join(lines)

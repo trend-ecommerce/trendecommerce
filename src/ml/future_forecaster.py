@@ -110,9 +110,30 @@ class FutureForecaster:
             "summary": f"Previsão de {total_units / horizon_days:.1f} un/dia orientada por histórico recente.",
             "primary_driver": "Sazonalidade e Histórico de Giro",
             "factors": [
-                {"name": "Média Recente", "weight_pct": 45, "impact": "Alta Estabilidade"},
-                {"name": "Sazonalidade Semanal", "weight_pct": 35, "impact": "Aceleração em Fins de Semana"},
-                {"name": "Competitividade", "weight_pct": 20, "impact": "Preço Alinhado"}
+                {
+                    "name": "Média Recente",
+                    "weight_pct": 40,
+                    "impact": "Alta Estabilidade",
+                    "description": "Base orientada pelas vendas dos últimos 14 dias com giro regular."
+                },
+                {
+                    "name": "Sazonalidade Semanal",
+                    "weight_pct": 30,
+                    "impact": "Aceleração em Fins de Semana",
+                    "description": "Aumento no volume de conversão nos sábados e domingos."
+                },
+                {
+                    "name": "Competitividade",
+                    "weight_pct": 15,
+                    "impact": "Preço Alinhado",
+                    "description": "Preço competitivo mantendo alta taxa de atratividade."
+                },
+                {
+                    "name": "Tendência de Mercado",
+                    "weight_pct": 15,
+                    "impact": "Busca Positiva",
+                    "description": "Índice de interesse e estabilidade de categoria em nível favorável."
+                }
             ]
         }
         
@@ -133,3 +154,18 @@ class FutureForecaster:
             days=daily_forecasts,
             explanation=explanation
         )
+
+    def forecast_all_products(
+        self,
+        products_df: pd.DataFrame,
+        sales_df: pd.DataFrame,
+        horizon_days: int = 7
+    ) -> list[ProductFutureForecast]:
+        """Gera previsões para todos os produtos fornecidos."""
+        results = []
+        for _, prod in products_df.iterrows():
+            prod_id = prod["product_id"]
+            prod_sales = sales_df[sales_df["product_id"] == prod_id]
+            forecast = self.forecast_product(prod, prod_sales, horizon_days=horizon_days)
+            results.append(forecast)
+        return results

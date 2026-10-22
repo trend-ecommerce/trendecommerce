@@ -73,6 +73,16 @@ class DemandTrainer:
         logger.info(f"Modelo treinado - Test RMSE: {self.training_metrics['test_rmse']:.4f}, Test R²: {self.training_metrics['test_r2']:.4f}")
         return self.training_metrics
 
+    def get_feature_importance(self) -> dict[str, float]:
+        """Retorna importância das features."""
+        if self.model is None or not hasattr(self.model, "feature_importances_"):
+            return {}
+        importances = self.model.feature_importances_
+        return {
+            name: float(imp)
+            for name, imp in zip(self.feature_names, importances)
+        }
+
     def cross_validate(self, X: pd.DataFrame, y: pd.Series, cv: int = 5) -> dict[str, float]:
         """Realiza validação cruzada K-Fold."""
         if self.model is None:
