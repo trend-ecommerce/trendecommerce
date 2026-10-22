@@ -11,6 +11,9 @@ function IaPreditivaTab({ categories, showToast }) {
     const [horizonDays, setHorizonDays] = React.useState(7);
     const [dateDropdownOpen, setDateDropdownOpen] = React.useState(false);
     const [catDropdownOpen, setCatDropdownOpen] = React.useState(false);
+    const [reportModalOpen, setReportModalOpen] = React.useState(false);
+    const [reportData, setReportData] = React.useState(null);
+    const [loadingReport, setLoadingReport] = React.useState(false);
 
     const canvasRef = React.useRef(null);
     const pointsRef = React.useRef([]);
@@ -419,39 +422,63 @@ function IaPreditivaTab({ categories, showToast }) {
         updateChartData(prod, days);
     };
 
+    const triggerCsvDownload = (summary) => {
+        if (!summary || !summary.items || summary.items.length === 0) {
+            showToast('Nenhum dado disponível para exportar.', 'error');
+            return;
+        }
+
+        const BOM = '\uFEFF';
+        const headers = [
+            'ID',
+            'Produto',
+            'Categoria',
+            'Preco Unitario (R$)',
+            `Demanda Prevista (${summary.horizon_days} Dias)`,
+            'Faturamento Projetado (R$)',
+            'Media Diaria (un)',
+            'Estoque Recomendado'
+        ];
+
+        const rows = summary.items.map(item => [
+            item.product_id,
+            `"${String(item.product_title || '').replace(/"/g, '""')}"`,
+            `"${String(item.category || '').replace(/"/g, '""')}"`,
+            Number(item.unit_price || 0).toFixed(2).replace('.', ','),
+            item.total_predicted_units || 0,
+            Number(item.total_projected_revenue || 0).toFixed(2).replace('.', ','),
+            Number(item.daily_average || 0).toFixed(1).replace('.', ','),
+            item.recommended_stock_buffer || 0
+        ]);
+
+        const csvContent = BOM + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `trendecommerce_relatorio_${summary.horizon_days}d.csv`);
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }, 300);
+
+        showToast(`Relatório Excel / CSV (${summary.horizon_days} dias) baixado com sucesso!`, 'success');
+    };
+
     const handleExportExcel = async () => {
         try {
-            showToast('Gerando relatório consolidado...', 'info');
+            setReportModalOpen(true);
+            setLoadingReport(true);
+            showToast('Carregando relatório consolidado...', 'info');
             const summary = await window.apiService.forecast.summary(horizonDays);
-
-            let csvContent = 'data:text/csv;charset=utf-8,';
-            csvContent += `ID;Produto;Categoria;Preco Unitario;Demanda ${horizonDays} Dias;Faturamento Projetado;Media Diaria;Estoque Recomendado\n`;
-
-            summary.items.forEach(item => {
-                const row = [
-                    item.product_id,
-                    `"${item.product_title.replace(/"/g, '""')}"`,
-                    `"${item.category}"`,
-                    item.unit_price.toFixed(2).replace('.', ','),
-                    item.total_predicted_units,
-                    item.total_projected_revenue.toFixed(2).replace('.', ','),
-                    item.daily_average.toFixed(1).replace('.', ','),
-                    item.recommended_stock_buffer
-                ].join(';');
-                csvContent += row + '\n';
-            });
-
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement('a');
-            link.setAttribute('href', encodedUri);
-            link.setAttribute('download', `trendecommerce_relatorio_${horizonDays}d.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            showToast(`Relatório Excel / CSV (${horizonDays} dias) exportado com sucesso!`, 'success');
+            setReportData(summary);
+            setLoadingReport(false);
+            triggerCsvDownload(summary);
         } catch (err) {
-            showToast('Erro ao exportar: ' + err.message, 'error');
+            setLoadingReport(false);
+            showToast('Erro ao exportar relatório: ' + err.message, 'error');
         }
     };
 
@@ -718,6 +745,119 @@ function IaPreditivaTab({ categories, showToast }) {
                     </button>
                 </div>
             </div>
+
+            {/* Modal de Pré-visualização do Relatório na Tela */}
+            {reportModalOpen && (
+                <div className="ranking-modal-overlay" onClick={() => setReportModalOpen(false)}>
+                    <div 
+                        className="ranking-modal-content" 
+                        style={{ maxWidth: '900px', width: '95%', maxHeight: '88vh', display: 'flex', flexDirection: 'column', padding: '24px' }} 
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="ranking-modal-header" style={{ borderBottom: '1px solid rgba(0, 212, 255, 0.2)', paddingBottom: '12px', marginBottom: '16px' }}>
+                            <div className="modal-badge-row">
+                                <span className="modal-rank-badge" style={{ background: 'linear-gradient(135deg, #00b4d8, #00f0ff)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <i className="ph ph-file-text"></i> RELATÓRIO EXECUTIVO DE DEMANDA
+                                </span>
+                                <span className="modal-category-badge">
+                                    HORIZONTE: {horizonDays} DIAS
+                                </span>
+                            </div>
+                            <button type="button" className="modal-close-btn" onClick={() => setReportModalOpen(false)}>
+                                <i className="ph ph-x"></i>
+                            </button>
+                        </div>
+
+                        {loadingReport ? (
+                            <div style={{ textAlign: 'center', padding: '50px 20px', color: '#8da2bd' }}>
+                                <div style={{ fontSize: '32px', marginBottom: '14px', color: '#00d4ff' }}>
+                                    <i className="ph ph-spinner ph-spin"></i>
+                                </div>
+                                <p style={{ fontSize: '15px', fontWeight: '600' }}>Processando modelo preditivo e compilando dados...</p>
+                            </div>
+                        ) : reportData ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: '16px' }}>
+                                {/* Cards de Resumo */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                                    <div style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid rgba(0, 212, 255, 0.18)', borderRadius: '10px', padding: '12px 16px' }}>
+                                        <div style={{ fontSize: '11px', color: '#8da2bd', textTransform: 'uppercase', fontWeight: '700' }}>Produtos Analisados</div>
+                                        <div style={{ fontSize: '22px', fontWeight: '800', color: '#ffffff', marginTop: '4px' }}>
+                                            {reportData.total_products} <span style={{ fontSize: '12px', color: '#8da2bd', fontWeight: '500' }}>itens</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid rgba(0, 212, 255, 0.18)', borderRadius: '10px', padding: '12px 16px' }}>
+                                        <div style={{ fontSize: '11px', color: '#8da2bd', textTransform: 'uppercase', fontWeight: '700' }}>Demanda Projetada</div>
+                                        <div style={{ fontSize: '22px', fontWeight: '800', color: '#00f0ff', marginTop: '4px' }}>
+                                            {(reportData.total_predicted_units || 0).toLocaleString('pt-BR')} <span style={{ fontSize: '12px', color: '#8da2bd', fontWeight: '500' }}>un</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid rgba(0, 212, 255, 0.18)', borderRadius: '10px', padding: '12px 16px' }}>
+                                        <div style={{ fontSize: '11px', color: '#8da2bd', textTransform: 'uppercase', fontWeight: '700' }}>Faturamento Projetado</div>
+                                        <div style={{ fontSize: '22px', fontWeight: '800', color: '#10b981', marginTop: '4px' }}>
+                                            R$ {(reportData.total_projected_revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Tabela do Relatório na Tela */}
+                                <div style={{ flex: 1, overflowY: 'auto', maxHeight: '45vh', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', background: 'rgba(2, 8, 20, 0.55)' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                                        <thead>
+                                            <tr style={{ background: 'rgba(0, 212, 255, 0.12)', color: '#00f0ff', position: 'sticky', top: 0, zIndex: 2 }}>
+                                                <th style={{ padding: '10px 12px', borderBottom: '1px solid rgba(0, 212, 255, 0.2)' }}>ID</th>
+                                                <th style={{ padding: '10px 12px', borderBottom: '1px solid rgba(0, 212, 255, 0.2)' }}>Produto</th>
+                                                <th style={{ padding: '10px 12px', borderBottom: '1px solid rgba(0, 212, 255, 0.2)' }}>Categoria</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right', borderBottom: '1px solid rgba(0, 212, 255, 0.2)' }}>Preço Unit.</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '1px solid rgba(0, 212, 255, 0.2)' }}>Demanda Prevista</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'right', borderBottom: '1px solid rgba(0, 212, 255, 0.2)' }}>Faturamento</th>
+                                                <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '1px solid rgba(0, 212, 255, 0.2)' }}>Estoque Rec.</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {reportData.items && reportData.items.map((it, idx) => (
+                                                <tr key={it.product_id || idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', color: '#e2e8f0', transition: 'background 0.2s' }}>
+                                                    <td style={{ padding: '8px 12px', color: '#8da2bd' }}>#{it.product_id}</td>
+                                                    <td style={{ padding: '8px 12px', fontWeight: '600' }}>{it.product_title}</td>
+                                                    <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{it.category}</td>
+                                                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>R$ {(it.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                    <td style={{ padding: '8px 12px', textAlign: 'center', color: '#00e5ff', fontWeight: '700' }}>{it.total_predicted_units} un</td>
+                                                    <td style={{ padding: '8px 12px', textAlign: 'right', color: '#10b981', fontWeight: '600' }}>R$ {(it.total_projected_revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                    <td style={{ padding: '8px 12px', textAlign: 'center', color: '#f59e0b', fontWeight: '700' }}>{it.recommended_stock_buffer} un</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Ações do Modal */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', paddingTop: '12px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                                    <span style={{ fontSize: '11px', color: '#8da2bd' }}>
+                                        * Exibindo dados consolidados de projeção calculados pelo modelo XGBoost.
+                                    </span>
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <button 
+                                            type="button" 
+                                            className="btn-export-excel" 
+                                            style={{ padding: '8px 18px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }} 
+                                            onClick={() => triggerCsvDownload(reportData)}
+                                        >
+                                            <i className="ph ph-download-simple" style={{ fontSize: '16px' }}></i> BAIXAR EXCEL (.CSV)
+                                        </button>
+                                        <button 
+                                            type="button" 
+                                            className="btn-modal-close" 
+                                            style={{ padding: '8px 16px', fontSize: '12px' }} 
+                                            onClick={() => setReportModalOpen(false)}
+                                        >
+                                            FECHAR
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : null}
+                    </div>
+                </div>
+            )}
         </section>
     );
 }
