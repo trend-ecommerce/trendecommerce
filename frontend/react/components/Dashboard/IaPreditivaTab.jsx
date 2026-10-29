@@ -322,10 +322,8 @@ function IaPreditivaTab({ categories, showToast }) {
             ctx.beginPath();
             ctx.arc(p.x, p.y, isHovered ? hoverRadius : dotRadius, 0, Math.PI * 2);
             ctx.fillStyle = isHovered ? '#ffffff' : '#00f0ff';
-            ctx.shadowBlur = isHovered ? 16 : 10;
             ctx.shadowColor = '#00d4ff';
             ctx.fill();
-            ctx.shadowBlur = 0;
 
             ctx.strokeStyle = isHovered ? '#00f0ff' : '#07172b';
             ctx.lineWidth = isHovered ? 2.5 : 2;
