@@ -499,10 +499,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
                 ctx.fillStyle = `hsla(${this.hue}, 100%, 50%, ${this.opacity})`;
-                ctx.shadowBlur = 8;
                 ctx.shadowColor = `hsl(${this.hue}, 100%, 50%)`;
                 ctx.fill();
-                ctx.shadowBlur = 0;
             }
         }
 

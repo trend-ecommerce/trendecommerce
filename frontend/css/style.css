@@ -167,7 +167,6 @@ body {
     width: 68px;
     height: 68px;
     margin-bottom: 8px;
-    filter: drop-shadow(0 0 16px rgba(0, 212, 255, 0.6));
     animation: floatLogo 6s ease-in-out infinite;
     display: flex;
     align-items: center;
@@ -872,7 +871,6 @@ body {
     width: auto;
     max-width: 140px;
     object-fit: contain;
-    filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.45));
     display: block;
 }
 
