@@ -1,11 +1,19 @@
-"""Roteador principal agregando todas as rotas v1."""
+"""Roteador principal agregando todas as rotas v1 do TrendEcommerce AI."""
 
 from fastapi import APIRouter
-from src.api.endpoints import auth, products, forecast, recommendations
+from src.api.routers import (
+    auth_router,
+    products_router,
+    forecast_router,
+    trends_router,
+    opportunity_router
+)
 
 api_router = APIRouter(prefix="/v1")
 
-api_router.include_router(auth.router, prefix="/auth", tags=["Autenticação"])
-api_router.include_router(products.router, prefix="/products", tags=["Produtos"])
-api_router.include_router(forecast.router, prefix="/forecast", tags=["Previsões de Demanda"])
-api_router.include_router(recommendations.router, prefix="/recommendations", tags=["Recomendações"])
+# Roteadores completos com suporte total à modelagem XGBoost, produtos e autenticação
+api_router.include_router(auth_router)
+api_router.include_router(products_router)
+api_router.include_router(forecast_router)
+api_router.include_router(trends_router)
+api_router.include_router(opportunity_router)
