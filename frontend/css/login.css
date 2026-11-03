@@ -75,7 +75,6 @@ body.auth-mode textarea {
     max-width: 100%;
     display: block;
     object-fit: contain;
-    filter: drop-shadow(0 0 18px rgba(0, 212, 255, 0.7)) drop-shadow(0 0 32px rgba(0, 150, 255, 0.4));
     animation: floatLogo 6s ease-in-out infinite;
 }
 
@@ -138,8 +137,6 @@ body.auth-mode textarea {
 .login-button,
 .button-right {
     background: #00AEEF20;
-    backdrop-filter: blur(50px);
-    -webkit-backdrop-filter: blur(50px);
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 47px;
@@ -217,8 +214,6 @@ body.auth-mode textarea {
     min-height: clamp(38px, 4.6vh, 46px);
     padding: 0 18px;
     background: rgba(9, 32, 60, 0.65);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
     border: 1px solid rgba(0, 180, 216, 0.35);
     border-radius: 47px;
     color: #ffffff;
@@ -290,8 +285,6 @@ body.auth-mode textarea {
     margin: 0;
     padding: 8px 18px;
     background: linear-gradient(90deg, #008BBF20, #00648920);
-    backdrop-filter: blur(50px);
-    -webkit-backdrop-filter: blur(50px);
     color: #F5F9FC;
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 47px;
@@ -404,8 +397,6 @@ body.auth-mode textarea {
     margin: 0;
     padding: 0;
     background: #00AEEF20;
-    backdrop-filter: blur(50px);
-    -webkit-backdrop-filter: blur(50px);
     color: #fff;
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 47px;
@@ -676,8 +667,6 @@ body.auth-mode textarea {
     width: 100vw;
     height: 100vh;
     background: rgba(0, 0, 0, 0.78);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
     z-index: 99999;
     display: flex;
     align-items: center;
