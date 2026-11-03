@@ -65,13 +65,6 @@ function AuthContainer({ onLoginSuccess, showToast, currentView, onSwitchView })
                         {view.startsWith('recovery') && (
                             <React.Fragment>
                                 <h1>RECUPERE<br />SUA SENHA</h1>
-                                <button
-                                    type="button"
-                                    className="login-button"
-                                    onClick={() => setView('login')}
-                                >
-                                    ENTRAR
-                                </button>
                             </React.Fragment>
                         )}
                     </div>
