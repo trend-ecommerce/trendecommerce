@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrendCommerce AI - Nova Senha</title>
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- CSS Stylesheets -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/login.css">
+</head>
+<body class="auth-mode">
+    <div id="appRoot" class="app-root auth-view">
+        <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+        <div class="auth-root-wrapper">
+            <div class="logo logo-header">
+                <img src="assets/logo.png" alt="TrendCommerce Logo" class="logo-img">
+            </div>
+
+            <div class="login-pai">
+                <div class="login-container">
+                    <!-- Painel Esquerdo -->
+                    <div class="login-left">
+                        <h1>RECUPERE<br>SUA SENHA</h1>
+                        <a href="login.html" class="login-button" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none;">
+                            ENTRAR
+                        </a>
+                    </div>
+
+                    <!-- Painel Direito: Redefinir Nova Senha -->
+                    <div class="login-right">
+                        <form id="formRecoveryStep3" class="login-form-content" noValidate>
+                            <h1>EMAIL:</h1>
+                            <input
+                                type="email"
+                                id="recoveryEmailStep3"
+                                class="login-input"
+                                placeholder="Digite seu email..."
+                                required
+                                autocomplete="email"
+                            >
+
+                            <h1>SENHA:</h1>
+                            <div class="password-container">
+                                <input
+                                    type="password"
+                                    id="recoveryNewPassword"
+                                    class="login-input"
+                                    placeholder="Digite sua senha..."
+                                    required
+                                    autocomplete="new-password"
+                                >
+                                <button type="button" id="toggleRecoverySenha" aria-label="Mostrar ou ocultar nova senha">
+                                    <i class="ph ph-eye"></i>
+                                </button>
+                            </div>
+                            <span id="recoveryNewPassError" class="login-field-error"></span>
+
+                            <h1>CONFIRMAR SENHA:</h1>
+                            <div class="password-container">
+                                <input
+                                    type="password"
+                                    id="recoveryConfirmNewPassword"
+                                    class="login-input"
+                                    placeholder="Digite sua senha..."
+                                    required
+                                    autocomplete="new-password"
+                                >
+                                <button type="button" id="toggleRecoveryConfirmar" aria-label="Mostrar ou ocultar confirmação de senha">
+                                    <i class="ph ph-eye"></i>
+                                </button>
+                            </div>
+                            <span id="recoveryConfirmPassError" class="login-field-error"></span>
+
+                            <button type="submit" id="btnRecoveryStep3Submit" class="button-right">
+                                LOGIN
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/toast.js"></script>
+    <script src="js/auth.js"></script>
+</body>
+</html>

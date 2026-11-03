@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrendCommerce AI - Ranking de Produtos</title>
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- CSS Stylesheets -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/login.css">
+</head>
+<body class="dashboard-mode">
+    <div id="appRoot" class="app-root dashboard-view">
+        
+        <!-- Efeitos Visuais Cyberpunk de Fundo -->
+        <div id="backgroundEffects" class="background-effects">
+            <div class="hud-circle hud-circle-left"></div>
+            <div class="hud-circle hud-circle-right"></div>
+            <div class="hud-circle hud-circle-center"></div>
+            <div class="circuit-grid"></div>
+            <canvas id="circuit-canvas"></canvas>
+        </div>
+
+        <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+        <!-- Layout do Dashboard -->
+        <div id="dashboardSection" class="dashboard-layout sidebar-open">
+            
+            <!-- Barra Lateral de Navegação -->
+            <aside id="dashSidebar" class="dash-sidebar open" aria-hidden="false">
+                <div class="dash-user-profile">
+                    <div class="user-avatar-circle">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </div>
+                    <div class="user-info-text">
+                        <span id="dashUserName" class="user-info-name">Administrador</span>
+                        <button type="button" id="btnLogout" class="btn-logout-link">
+                            Sair
+                        </button>
+                    </div>
+                </div>
+
+                <nav class="dash-nav-menu">
+                    <a href="ia-preditiva.html" class="dash-nav-btn" style="text-decoration: none;">
+                        <span>IA PREDITIVA</span>
+                    </a>
+                    <a href="ranking.html" class="dash-nav-btn active" style="text-decoration: none;">
+                        <span>RANKING PRODUTOS</span>
+                    </a>
+                    <a href="analise-especifica.html" class="dash-nav-btn" style="text-decoration: none;">
+                        <span>ANÁLISE ESPECÍFICA</span>
+                    </a>
+                </nav>
+            </aside>
+
+            <!-- Área Principal -->
+            <div class="dash-main-area">
+                
+                <header class="dash-top-header">
+                    <div class="dash-header-left">
+                        <button type="button" id="sidebarToggleBtn" class="sidebar-toggle-btn" title="Alternar menu lateral" aria-label="Alternar menu lateral">
+                            <span class="toggle-dot"></span>
+                            <span class="toggle-dot"></span>
+                            <span class="toggle-dot"></span>
+                        </button>
+                    </div>
+                    <div class="dash-header-right">
+                        <div class="dash-brand-logo">
+                            <img src="assets/logo.png" alt="TrendEcommerce Logo" class="dash-brand-img">
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Conteúdo da Aba Ranking Produtos -->
+                <section class="dash-tab-content active">
+                    <div class="ranking-two-col-grid">
+                        
+                        <!-- Coluna Esquerda: Top 7 Geral -->
+                        <div class="dash-card ranking-col-card">
+                            <div class="ranking-header-wrap">
+                                <h2 class="ranking-card-title">TOP 7 PRODUTOS<br>PRÓXIMOS 30 DIAS</h2>
+                            </div>
+                            <div id="rankingTop7List" class="ranking-items-list">
+                                <p class="empty-msg">Processando modelo XGBoost...</p>
+                            </div>
+                        </div>
+
+                        <!-- Coluna Direita: Top 5 por Categoria -->
+                        <div class="dash-card ranking-col-card">
+                            <div class="ranking-header-wrap">
+                                <h2 class="ranking-card-title">TOP 5 PRODUTOS<br>POR CATEGORIA</h2>
+                            </div>
+
+                            <div id="rankingTopCategoryList" class="ranking-items-list">
+                                <p class="empty-msg">Carregando categorias...</p>
+                            </div>
+
+                            <div id="rankingCatBtnWrap" class="ranking-cat-btn-wrap" style="position: relative;">
+                                <button type="button" id="btnRankingCategorySelect" class="btn-category-select" style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-width: 200px; padding: 0 20px; height: 42px; cursor: pointer;">
+                                    <span style="letter-spacing: 0.8px; font-weight: 700;">CATEGORIAS</span>
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#00d4ff" stroke-width="2.5" style="flex-shrink: 0;">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                </button>
+                                <div id="rankingCategoryDropdownMenu" class="dates-dropdown-menu categories-dropdown-menu" style="display: none; min-width: 295px; width: max-content; max-width: 330px; left: 50%; transform: translateX(-50%); top: calc(100% + 8px); z-index: 150;">
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Modal de Explicabilidade Ranking IA -->
+        <div id="rankingItemModalOverlay" class="ranking-modal-overlay" style="display: none;">
+            <div class="ranking-modal-content">
+                <div class="ranking-modal-header">
+                    <div class="modal-badge-row">
+                        <span id="rankingModalRankBadge" class="modal-rank-badge">
+                            <i class="ph ph-trophy" style="font-size: 13px; margin-right: 4px;"></i> #1 NO RANKING
+                        </span>
+                        <span id="rankingModalCategoryBadge" class="modal-category-badge">Geral</span>
+                    </div>
+                    <button type="button" id="rankingModalCloseBtn" class="modal-close-btn">
+                        <i class="ph ph-x" style="font-size: 18px;"></i>
+                    </button>
+                </div>
+
+                <h2 id="rankingModalProdTitle" class="modal-prod-title">PRODUTO</h2>
+
+                <div class="modal-reason-box">
+                    <div class="reason-label">
+                        <i class="ph ph-target" style="font-size: 13px; margin-right: 4px;"></i> MOTIVO DE ESTAR NO TOP RANKING:
+                    </div>
+                    <p id="rankingModalReasonText" class="reason-text"></p>
+                </div>
+
+                <div class="modal-metrics-grid">
+                    <div class="modal-metric-card">
+                        <span class="m-label">VENDAS PROJETADAS (30D)</span>
+                        <span id="rankingModalPredictedUnits" class="m-val text-cyan">0 unidades</span>
+                    </div>
+                    <div class="modal-metric-card">
+                        <span class="m-label">RECEITA ESTIMADA</span>
+                        <span id="rankingModalProjectedRevenue" class="m-val text-emerald">R$ 0,00</span>
+                    </div>
+                    <div class="modal-metric-card">
+                        <span class="m-label">PREÇO UNITÁRIO</span>
+                        <span id="rankingModalUnitPrice" class="m-val">R$ 0,00</span>
+                    </div>
+                    <div class="modal-metric-card">
+                        <span class="m-label">FATOR DOMINANTE</span>
+                        <span id="rankingModalKeyDriver" class="m-val text-accent">Sazonalidade</span>
+                    </div>
+                </div>
+
+                <div class="modal-dynamics-box">
+                    <h4 class="dynamics-title">
+                        <i class="ph ph-chart-bar" style="font-size: 15px; margin-right: 5px;"></i> Dinâmica de Vendas Prevista pelo Modelo IA:
+                    </h4>
+                    <p id="rankingModalDynamicsDesc" class="dynamics-desc"></p>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" id="rankingModalFooterCloseBtn" class="btn-modal-close">
+                        Fechar Explicação
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/effects.js"></script>
+    <script src="js/toast.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/ranking.js"></script>
+</body>
+</html>

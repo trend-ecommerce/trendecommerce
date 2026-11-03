@@ -1,13 +1,11 @@
 /**
- * TrendCommerce AI - Vanilla Auth Controller
- * Gerencia Login, Cadastro, Recuperação de Senha (3 Etapas) e Autenticação Google com 2FA.
+ * TrendCommerce AI - Multi-Page Auth Controller
+ * Gerencia formulários em login.html, cadastro.html, recuperar-senha.html,
+ * codigo-verificacao.html e nova-senha.html.
  */
 
 const GOOGLE_CLIENT_ID = '33242244365-ubjiqb1h7thh0t6n5hdg3e3ugsuebm6e.apps.googleusercontent.com';
 
-/**
- * Abre diretamente a janela oficial do Google (Google Identity Services)
- */
 window.launchGoogleAuth = function({ onAccountSelected, onError, setLoading }) {
     const clientId = window.GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID;
 
@@ -51,9 +49,7 @@ window.launchGoogleAuth = function({ onAccountSelected, onError, setLoading }) {
                     error_callback: (err) => {
                         console.warn('[GIS Error Callback]', err);
                         if (setLoading) setLoading(false);
-                        if (err?.type === 'popup_closed') {
-                            return;
-                        }
+                        if (err?.type === 'popup_closed') return;
                         if (onError) onError('A janela de seleção do Google foi fechada ou bloqueada pelo navegador.');
                     }
                 });
@@ -94,12 +90,10 @@ window.launchGoogleAuth = function({ onAccountSelected, onError, setLoading }) {
             script.src = 'https://accounts.google.com/gsi/client';
             script.async = true;
             script.defer = true;
-            script.onload = () => {
-                setTimeout(executeGIS, 150);
-            };
+            script.onload = () => setTimeout(executeGIS, 150);
             script.onerror = () => {
                 if (setLoading) setLoading(false);
-                if (onError) onError('Não foi possível carregar o serviço do Google. Verifique sua conexão.');
+                if (onError) onError('Não foi possível carregar o serviço do Google.');
             };
             document.head.appendChild(script);
         }
@@ -108,670 +102,555 @@ window.launchGoogleAuth = function({ onAccountSelected, onError, setLoading }) {
     executeGIS();
 };
 
-const AuthModule = (function() {
-    let currentView = 'login'; // 'login' | 'register' | 'recovery-1' | 'recovery-2' | 'recovery-3'
-    let recoveryEmail = '';
-    let recoveryCode = '';
-    let googleAccount = null;
-    let googleCooldownTimer = null;
-    let googleCooldownSeconds = 45;
+document.addEventListener('DOMContentLoaded', () => {
+    setupPasswordToggles();
+    setupLoginForm();
+    setupRegisterForm();
+    setupRecoveryStep1();
+    setupRecoveryStep2();
+    setupRecoveryStep3();
+    setupGoogle2FAModal();
+});
 
-    function init() {
-        setupLeftPanelEvents();
-        setupLoginForm();
-        setupRegisterForm();
-        setupRecoveryForms();
-        setupGoogleModal();
-        setupPasswordToggles();
-    }
-
-    function switchView(viewName, pushHistory = true) {
-        currentView = viewName;
-
-        // Atualizar painel esquerdo (.login-left)
-        const leftPanel = document.getElementById('loginLeftPanel');
-        if (leftPanel) {
-            if (viewName === 'login') {
-                leftPanel.innerHTML = `
-                    <h1>BEM-VINDO<br />DE VOLTA!</h1>
-                    <button type="button" class="login-button" id="btnLeftToRegister">
-                        CADASTRAR
-                    </button>
-                `;
-            } else if (viewName === 'register') {
-                leftPanel.innerHTML = `
-                    <h1>ACESSE SUA CONTA</h1>
-                    <button type="button" class="login-button" id="btnLeftToLogin">
-                        ENTRAR
-                    </button>
-                `;
-            } else if (viewName.startsWith('recovery')) {
-                leftPanel.innerHTML = `
-                    <h1>RECUPERE<br />SUA SENHA</h1>
-                    <button type="button" class="login-button" id="btnLeftRecoveryToLogin">
-                        ENTRAR
-                    </button>
-                `;
-            }
-            setupLeftPanelEvents();
-        }
-
-        // Atualizar formulários no painel direito (.login-right)
-        const forms = {
-            'login': document.getElementById('formLogin'),
-            'register': document.getElementById('formRegister'),
-            'recovery-1': document.getElementById('formRecoveryStep1'),
-            'recovery-2': document.getElementById('formRecoveryStep2'),
-            'recovery-3': document.getElementById('formRecoveryStep3')
-        };
-
-        Object.keys(forms).forEach((key) => {
-            if (forms[key]) {
-                if (key === viewName) {
-                    forms[key].style.display = 'block';
-                } else {
-                    forms[key].style.display = 'none';
+function setupPasswordToggles() {
+    document.querySelectorAll('.password-container').forEach(container => {
+        const input = container.querySelector('input');
+        const btn = container.querySelector('button');
+        if (input && btn) {
+            btn.onclick = (e) => {
+                e.preventDefault();
+                const isPass = input.type === 'password';
+                input.type = isPass ? 'text' : 'password';
+                const icon = btn.querySelector('i');
+                if (icon) {
+                    icon.className = isPass ? 'ph ph-eye-slash' : 'ph ph-eye';
                 }
-            }
-        });
-
-        if (viewName === 'recovery-2') {
-            const firstOtp = document.getElementById('otp1');
-            if (firstOtp) firstOtp.focus();
-        } else if (viewName === 'recovery-3') {
-            const emailInput = document.getElementById('recoveryEmailStep3');
-            if (emailInput && recoveryEmail) {
-                emailInput.value = recoveryEmail;
-            }
-        }
-
-        if (pushHistory && window.updateBrowserUrl) {
-            const viewRouteMap = {
-                'login': 'login',
-                'register': 'cadastro',
-                'recovery-1': 'recuperar-senha',
-                'recovery-2': 'recuperar-senha/codigo',
-                'recovery-3': 'recuperar-senha/nova-senha'
             };
-            window.updateBrowserUrl(viewRouteMap[viewName] || 'login');
         }
+    });
+}
+
+// 1. Login
+function setupLoginForm() {
+    const form = document.getElementById('formLogin');
+    if (!form) return;
+
+    const emailInput = document.getElementById('loginEmail');
+    const passInput = document.getElementById('loginPassword');
+    const submitBtn = document.getElementById('btnLoginSubmit');
+    const emailErr = document.getElementById('loginEmailError');
+    const passErr = document.getElementById('loginPasswordError');
+    const coldStartNotice = document.getElementById('coldStartNotice');
+    const googleBtn = document.getElementById('btnLoginGoogle');
+
+    if (googleBtn) {
+        googleBtn.onclick = handleGoogleTrigger;
     }
 
-    function setupLeftPanelEvents() {
-        const btnReg = document.getElementById('btnLeftToRegister');
-        if (btnReg) {
-            btnReg.onclick = () => switchView('register');
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (emailErr) emailErr.textContent = '';
+        if (passErr) passErr.textContent = '';
+
+        const email = (emailInput?.value || '').trim();
+        const password = passInput?.value || '';
+
+        let hasError = false;
+        if (!email) {
+            if (emailErr) emailErr.textContent = 'Informe seu email.';
+            hasError = true;
         }
-        const btnLogin = document.getElementById('btnLeftToLogin');
-        if (btnLogin) {
-            btnLogin.onclick = () => switchView('login');
+        if (!password) {
+            if (passErr) passErr.textContent = 'Informe sua senha.';
+            hasError = true;
         }
-        const btnRecLogin = document.getElementById('btnLeftRecoveryToLogin');
-        if (btnRecLogin) {
-            btnRecLogin.onclick = () => switchView('login');
-        }
-    }
+        if (hasError) return;
 
-    function setupPasswordToggles() {
-        document.querySelectorAll('.password-container').forEach(container => {
-            const input = container.querySelector('input');
-            const btn = container.querySelector('button');
-            if (input && btn) {
-                btn.onclick = () => {
-                    const isPass = input.type === 'password';
-                    input.type = isPass ? 'text' : 'password';
-                    const icon = btn.querySelector('i');
-                    if (icon) {
-                        icon.className = isPass ? 'ph ph-eye-slash' : 'ph ph-eye';
-                    }
-                };
-            }
-        });
-    }
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        if (coldStartNotice) coldStartNotice.style.display = 'none';
 
-    // ==========================================
-    // Login Form
-    // ==========================================
-    function setupLoginForm() {
-        const form = document.getElementById('formLogin');
-        if (!form) return;
+        const timer = setTimeout(() => {
+            if (coldStartNotice) coldStartNotice.style.display = 'block';
+        }, 3500);
 
-        const emailInput = document.getElementById('loginEmail');
-        const passInput = document.getElementById('loginPassword');
-        const submitBtn = document.getElementById('btnLoginSubmit');
-        const emailErr = document.getElementById('loginEmailError');
-        const passErr = document.getElementById('loginPasswordError');
-        const forgotLink = document.getElementById('linkForgotPassword');
-        const coldStartNotice = document.getElementById('coldStartNotice');
-        const googleBtn = document.getElementById('btnLoginGoogle');
-
-        if (forgotLink) {
-            forgotLink.onclick = () => switchView('recovery-1');
-        }
-
-        if (googleBtn) {
-            googleBtn.onclick = handleGoogleTrigger;
-        }
-
-        form.onsubmit = async (e) => {
-            e.preventDefault();
-            if (emailErr) emailErr.textContent = '';
-            if (passErr) passErr.textContent = '';
-
-            const email = (emailInput?.value || '').trim();
-            const password = passInput?.value || '';
-
-            let hasError = false;
-            if (!email) {
-                if (emailErr) emailErr.textContent = 'Informe seu email.';
-                hasError = true;
-            }
-            if (!password) {
-                if (passErr) passErr.textContent = 'Informe sua senha.';
-                hasError = true;
-            }
-            if (hasError) return;
-
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        try {
+            const data = await window.apiService.auth.login(email, password);
+            clearTimeout(timer);
+            window.showToast?.(`Bem-vindo, ${data.user.email}!`, 'success');
+            setTimeout(() => {
+                window.location.replace('ia-preditiva.html');
+            }, 600);
+        } catch (err) {
+            clearTimeout(timer);
             if (coldStartNotice) coldStartNotice.style.display = 'none';
+            if (passErr) passErr.textContent = err.message || 'Email ou senha incorretos.';
+            window.showToast?.(err.message || 'Falha ao autenticar.', 'error');
+        } finally {
+            clearTimeout(timer);
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'ENTRAR';
+        }
+    };
+}
 
-            const timer = setTimeout(() => {
-                if (coldStartNotice) coldStartNotice.style.display = 'block';
-            }, 3500);
+// 2. Cadastro
+function setupRegisterForm() {
+    const form = document.getElementById('formRegister');
+    if (!form) return;
 
-            try {
-                const data = await window.apiService.auth.login(email, password);
-                clearTimeout(timer);
-                if (coldStartNotice) coldStartNotice.style.display = 'none';
-                window.showToast(`Bem-vindo, ${data.user.email}!`, 'success');
-                if (window.onAuthSuccess) {
-                    window.onAuthSuccess(data.user);
-                }
-            } catch (err) {
-                clearTimeout(timer);
-                if (coldStartNotice) coldStartNotice.style.display = 'none';
-                if (passErr) passErr.textContent = err.message || 'Email ou senha incorretos.';
-                window.showToast(err.message || 'Falha ao autenticar.', 'error');
-            } finally {
-                clearTimeout(timer);
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'ENTRAR';
-            }
-        };
+    const emailInput = document.getElementById('registerEmail');
+    const passInput = document.getElementById('registerPassword');
+    const confirmInput = document.getElementById('registerConfirmPassword');
+    const submitBtn = document.getElementById('btnRegisterSubmit');
+    const emailErr = document.getElementById('registerEmailError');
+    const passErr = document.getElementById('registerPasswordError');
+    const confirmErr = document.getElementById('registerConfirmPasswordError');
+    const googleBtn = document.getElementById('btnRegisterGoogle');
+
+    if (googleBtn) {
+        googleBtn.onclick = handleGoogleTrigger;
     }
 
-    // ==========================================
-    // Register Form
-    // ==========================================
-    function setupRegisterForm() {
-        const form = document.getElementById('formRegister');
-        if (!form) return;
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (emailErr) emailErr.textContent = '';
+        if (passErr) passErr.textContent = '';
+        if (confirmErr) confirmErr.textContent = '';
 
-        const emailInput = document.getElementById('registerEmail');
-        const passInput = document.getElementById('registerPassword');
-        const confirmInput = document.getElementById('registerConfirmPassword');
-        const submitBtn = document.getElementById('btnRegisterSubmit');
-        const emailErr = document.getElementById('registerEmailError');
-        const passErr = document.getElementById('registerPasswordError');
-        const confirmErr = document.getElementById('registerConfirmPasswordError');
-        const googleBtn = document.getElementById('btnRegisterGoogle');
+        const email = (emailInput?.value || '').trim();
+        const password = passInput?.value || '';
+        const confirm = confirmInput?.value || '';
 
-        if (googleBtn) {
-            googleBtn.onclick = handleGoogleTrigger;
+        let hasError = false;
+        if (!email) {
+            if (emailErr) emailErr.textContent = 'Informe um email válido.';
+            hasError = true;
         }
-
-        form.onsubmit = async (e) => {
-            e.preventDefault();
-            if (emailErr) emailErr.textContent = '';
-            if (passErr) passErr.textContent = '';
-            if (confirmErr) confirmErr.textContent = '';
-
-            const email = (emailInput?.value || '').trim();
-            const password = passInput?.value || '';
-            const confirm = confirmInput?.value || '';
-
-            let hasError = false;
-            if (!email) {
-                if (emailErr) emailErr.textContent = 'Informe um email válido.';
-                hasError = true;
-            }
-            if (password.length < 6) {
-                if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
-                hasError = true;
-            }
-            if (password !== confirm) {
-                if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
-                hasError = true;
-            }
-            if (hasError) return;
-
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="login-spinner"></span>';
-
-            try {
-                await window.apiService.auth.register(email, password);
-                window.showToast('Cadastro realizado com sucesso! Faça login para continuar.', 'success');
-                switchView('login');
-            } catch (err) {
-                if (emailErr) emailErr.textContent = err.message || 'Erro ao realizar cadastro.';
-                window.showToast(err.message || 'Erro ao cadastrar.', 'error');
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'CADASTRAR';
-            }
-        };
-    }
-
-    // ==========================================
-    // Recovery Forms (1, 2, 3)
-    // ==========================================
-    function setupRecoveryForms() {
-        // Step 1
-        const f1 = document.getElementById('formRecoveryStep1');
-        if (f1) {
-            const emailInput = document.getElementById('recoveryEmailStep1');
-            const submitBtn = document.getElementById('btnRecoveryStep1Submit');
-            const errEl = document.getElementById('recoveryStep1Error');
-
-            f1.onsubmit = async (e) => {
-                e.preventDefault();
-                if (errEl) errEl.textContent = '';
-                const email = (emailInput?.value || '').trim();
-                if (!email) {
-                    if (errEl) errEl.textContent = 'Informe seu email cadastrado.';
-                    return;
-                }
-
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<span class="login-spinner"></span>';
-
-                try {
-                    const res = await window.apiService.auth.forgotPassword(email);
-                    window.showToast(res.message, 'success', 7000);
-                    recoveryEmail = email;
-                    switchView('recovery-2');
-                } catch (err) {
-                    if (errEl) errEl.textContent = err.message || 'Email não encontrado.';
-                    window.showToast(err.message || 'Erro ao enviar código.', 'error');
-                } finally {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'ENVIAR';
-                }
-            };
+        if (password.length < 6) {
+            if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
+            hasError = true;
         }
-
-        // Step 2
-        const f2 = document.getElementById('formRecoveryStep2');
-        if (f2) {
-            const otpInputs = [
-                document.getElementById('otp1'),
-                document.getElementById('otp2'),
-                document.getElementById('otp3'),
-                document.getElementById('otp4')
-            ];
-            const errEl = document.getElementById('recoveryStep2Error');
-            const resendBtn = document.getElementById('btnRecoveryResend');
-
-            otpInputs.forEach((inp, idx) => {
-                if (!inp) return;
-                inp.oninput = (e) => {
-                    const cleanVal = e.target.value.replace(/\D/g, '');
-                    inp.value = cleanVal ? cleanVal[0] : '';
-                    if (cleanVal && idx < 3 && otpInputs[idx + 1]) {
-                        otpInputs[idx + 1].focus();
-                    }
-                };
-
-                inp.onkeydown = (e) => {
-                    if (e.key === 'Backspace' && !inp.value && idx > 0 && otpInputs[idx - 1]) {
-                        otpInputs[idx - 1].focus();
-                    }
-                };
-
-                inp.onpaste = (e) => {
-                    e.preventDefault();
-                    const pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 4);
-                    if (pasted) {
-                        for (let i = 0; i < pasted.length; i++) {
-                            if (otpInputs[i]) otpInputs[i].value = pasted[i];
-                        }
-                        const nextIdx = Math.min(pasted.length, 3);
-                        if (otpInputs[nextIdx]) otpInputs[nextIdx].focus();
-                    }
-                };
-            });
-
-            if (resendBtn) {
-                resendBtn.onclick = async () => {
-                    try {
-                        const res = await window.apiService.auth.forgotPassword(recoveryEmail);
-                        window.showToast(res.message, 'info', 7000);
-                        otpInputs.forEach(i => { if (i) i.value = ''; });
-                        if (otpInputs[0]) otpInputs[0].focus();
-                    } catch (err) {
-                        window.showToast(err.message, 'error');
-                    }
-                };
-            }
-
-            f2.onsubmit = (e) => {
-                e.preventDefault();
-                if (errEl) errEl.textContent = '';
-                const code = otpInputs.map(i => i?.value || '').join('');
-                if (code.length < 4) {
-                    if (errEl) errEl.textContent = 'Digite os 4 dígitos do código de verificação.';
-                    return;
-                }
-
-                recoveryCode = code;
-                window.showToast('Código confirmado! Defina sua nova senha.', 'success');
-                switchView('recovery-3');
-            };
+        if (password !== confirm) {
+            if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
+            hasError = true;
         }
+        if (hasError) return;
 
-        // Step 3
-        const f3 = document.getElementById('formRecoveryStep3');
-        if (f3) {
-            const emailInput = document.getElementById('recoveryEmailStep3');
-            const passInput = document.getElementById('recoveryNewPassword');
-            const confirmInput = document.getElementById('recoveryConfirmNewPassword');
-            const submitBtn = document.getElementById('btnRecoveryStep3Submit');
-            const passErr = document.getElementById('recoveryNewPassError');
-            const confirmErr = document.getElementById('recoveryConfirmPassError');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="login-spinner"></span>';
 
-            f3.onsubmit = async (e) => {
-                e.preventDefault();
-                if (passErr) passErr.textContent = '';
-                if (confirmErr) confirmErr.textContent = '';
-
-                const email = (emailInput?.value || recoveryEmail || '').trim();
-                const newPass = passInput?.value || '';
-                const confirmPass = confirmInput?.value || '';
-
-                let hasError = false;
-                if (!email) {
-                    window.showToast('Informe o email.', 'error');
-                    hasError = true;
-                }
-                if (newPass.length < 6) {
-                    if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
-                    hasError = true;
-                }
-                if (newPass !== confirmPass) {
-                    if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
-                    hasError = true;
-                }
-                if (hasError) return;
-
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<span class="login-spinner"></span>';
-
-                try {
-                    const res = await window.apiService.auth.resetPassword(email, recoveryCode, newPass);
-                    window.showToast(res.message, 'success');
-                    switchView('login');
-                } catch (err) {
-                    if (passErr) passErr.textContent = err.message || 'Erro ao redefinir senha.';
-                    window.showToast(err.message || 'Erro ao redefinir senha.', 'error');
-                } finally {
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'LOGIN';
-                }
-            };
+        try {
+            await window.apiService.auth.register(email, password);
+            window.showToast?.('Cadastro realizado com sucesso! Redirecionando para login...', 'success');
+            setTimeout(() => {
+                window.location.replace('login.html');
+            }, 1000);
+        } catch (err) {
+            if (emailErr) emailErr.textContent = err.message || 'Erro ao realizar cadastro.';
+            window.showToast?.(err.message || 'Erro ao cadastrar.', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'CADASTRAR';
         }
-    }
+    };
+}
 
-    // ==========================================
-    // Google Auth & 2FA Modal
-    // ==========================================
-    function handleGoogleTrigger() {
-        if (typeof window.launchGoogleAuth !== 'function') {
-            window.showToast('Inicializando serviço do Google...', 'info');
+// 3. Recuperação - Etapa 1
+function setupRecoveryStep1() {
+    const form = document.getElementById('formRecoveryStep1');
+    if (!form) return;
+
+    const emailInput = document.getElementById('recoveryEmailStep1');
+    const submitBtn = document.getElementById('btnRecoveryStep1Submit');
+    const errEl = document.getElementById('recoveryStep1Error');
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (errEl) errEl.textContent = '';
+        const email = (emailInput?.value || '').trim();
+        if (!email) {
+            if (errEl) errEl.textContent = 'Informe seu email cadastrado.';
             return;
         }
 
-        const setLoading = (loading) => {
-            const btn1 = document.getElementById('btnLoginGoogle');
-            const btn2 = document.getElementById('btnRegisterGoogle');
-            [btn1, btn2].forEach(b => {
-                if (b) {
-                    b.disabled = loading;
-                    const span = b.querySelector('span');
-                    if (span) {
-                        span.textContent = loading ? 'Abrindo Google...' : (b.id === 'btnLoginGoogle' ? 'Entrar com o Google' : 'Cadastrar com o Google');
-                    }
-                }
-            });
-        };
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="login-spinner"></span>';
 
-        window.launchGoogleAuth({
-            setLoading,
-            onError: (msg) => {
-                window.showToast(msg, 'error');
-            },
-            onAccountSelected: async (account) => {
-                if (account.directLoginSuccess) {
-                    window.showToast(`Bem-vindo, ${account.data.user.email}!`, 'success');
-                    if (window.onAuthSuccess) {
-                        window.onAuthSuccess(account.data.user);
-                    }
-                    return;
-                }
-
-                try {
-                    window.showToast(`Enviando código de verificação para ${account.email}...`, 'info');
-                    await window.apiService.auth.requestGoogleCode(account.email, account.name);
-                    window.showToast(`Código 2FA enviado para ${account.email}!`, 'success');
-                    googleAccount = account;
-                    openGoogle2FAModal(account);
-                } catch (err) {
-                    window.showToast(err.message || 'Falha ao enviar código 2FA para o e-mail selecionado.', 'error');
-                }
-            }
-        });
-    }
-
-    function setupGoogleModal() {
-        const modalBackdrop = document.getElementById('googleAuthModal');
-        if (!modalBackdrop) return;
-
-        const closeBtn = document.getElementById('googleModalCloseBtn');
-        const switchAccBtn = document.getElementById('googleSwitchAccountBtn');
-        const resendBtn = document.getElementById('googleResendBtn');
-        const form2FA = document.getElementById('google2FAForm');
-
-        if (closeBtn) closeBtn.onclick = closeGoogle2FAModal;
-        modalBackdrop.onclick = (e) => {
-            if (e.target === modalBackdrop) closeGoogle2FAModal();
-        };
-
-        if (switchAccBtn) {
-            switchAccBtn.onclick = () => {
-                closeGoogle2FAModal();
-                handleGoogleTrigger();
-            };
+        try {
+            const res = await window.apiService.auth.forgotPassword(email);
+            sessionStorage.setItem('recovery_email', email);
+            window.showToast?.(res.message, 'success', 5000);
+            setTimeout(() => {
+                window.location.href = 'codigo-verificacao.html';
+            }, 800);
+        } catch (err) {
+            if (errEl) errEl.textContent = err.message || 'Email não encontrado.';
+            window.showToast?.(err.message || 'Erro ao enviar código.', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'ENVIAR';
         }
-
-        if (resendBtn) {
-            resendBtn.onclick = async () => {
-                if (googleCooldownSeconds > 0) return;
-                try {
-                    window.showToast('Reenviando código 2FA...', 'info');
-                    await window.apiService.auth.requestGoogleCode(googleAccount.email, googleAccount.name);
-                    window.showToast(`Novo código 2FA enviado para ${googleAccount.email}!`, 'success');
-                    startGoogleResendTimer();
-                } catch (err) {
-                    window.showToast(err.message || 'Erro ao reenviar código.', 'error');
-                }
-            };
-        }
-
-        const inputs = [0, 1, 2, 3].map(i => document.getElementById(`google-2fa-${i}`));
-        inputs.forEach((inp, idx) => {
-            if (!inp) return;
-            inp.oninput = (e) => {
-                const cleaned = e.target.value.replace(/\D/g, '');
-                if (cleaned.length > 1) {
-                    const chars = cleaned.slice(0, 4).split('');
-                    for (let i = 0; i < 4; i++) {
-                        if (inputs[i]) inputs[i].value = chars[i] || '';
-                    }
-                    const lastIdx = Math.min(chars.length - 1, 3);
-                    if (inputs[lastIdx]) inputs[lastIdx].focus();
-                    return;
-                }
-                inp.value = cleaned.slice(-1);
-                if (cleaned && idx < 3 && inputs[idx + 1]) {
-                    inputs[idx + 1].focus();
-                }
-            };
-
-            inp.onkeydown = (e) => {
-                if (e.key === 'Backspace' && !inp.value && idx > 0 && inputs[idx - 1]) {
-                    inputs[idx - 1].focus();
-                    inputs[idx - 1].value = '';
-                }
-            };
-        });
-
-        if (form2FA) {
-            form2FA.onsubmit = async (e) => {
-                e.preventDefault();
-                const code = inputs.map(i => i?.value || '').join('').trim();
-                const errBox = document.getElementById('google2FAError');
-                if (errBox) errBox.style.display = 'none';
-
-                if (code.length < 4) {
-                    if (errBox) {
-                        errBox.style.display = 'flex';
-                        errBox.querySelector('span').textContent = 'Digite os 4 dígitos do código recebido no seu e-mail.';
-                    }
-                    return;
-                }
-
-                const submitBtn = document.getElementById('google2FASubmitBtn');
-                if (submitBtn) {
-                    submitBtn.disabled = true;
-                    submitBtn.innerHTML = '<span class="login-spinner"></span>';
-                }
-
-                try {
-                    const data = await window.apiService.auth.verifyGoogleCode(
-                        googleAccount.email,
-                        code,
-                        googleAccount.name
-                    );
-                    window.showToast(`Autenticação de 2 fatores aprovada! Bem-vindo, ${data.user.name || data.user.email}!`, 'success');
-                    closeGoogle2FAModal();
-                    if (window.onAuthSuccess) {
-                        window.onAuthSuccess(data.user);
-                    }
-                } catch (err) {
-                    if (errBox) {
-                        errBox.style.display = 'flex';
-                        errBox.querySelector('span').textContent = err.message || 'Código 2FA incorreto ou expirado.';
-                    }
-                    window.showToast(err.message || 'Código de verificação inválido.', 'error');
-                } finally {
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = 'Confirmar';
-                    }
-                }
-            };
-        }
-    }
-
-    function openGoogle2FAModal(account) {
-        const modal = document.getElementById('googleAuthModal');
-        if (!modal) return;
-
-        const emailBadge = document.getElementById('google2FAEmailBadge');
-        if (emailBadge) {
-            if (account.picture) {
-                emailBadge.innerHTML = `
-                    <img src="${account.picture}" alt="${account.name}" class="google-row-avatar-img" style="width: 24px; height: 24px; margin-right: 8px; border-radius: 50%;" />
-                    <strong>${account.email}</strong>
-                `;
-            } else {
-                emailBadge.innerHTML = `
-                    <i class="ph ph-envelope-simple" style="margin-right: 6px;"></i>
-                    <strong>${account.email}</strong>
-                `;
-            }
-        }
-
-        [0, 1, 2, 3].forEach(i => {
-            const inp = document.getElementById(`google-2fa-${i}`);
-            if (inp) inp.value = '';
-        });
-        const errBox = document.getElementById('google2FAError');
-        if (errBox) errBox.style.display = 'none';
-
-        startGoogleResendTimer();
-        modal.style.display = 'flex';
-
-        setTimeout(() => {
-            const first = document.getElementById('google-2fa-0');
-            if (first) first.focus();
-        }, 100);
-    }
-
-    function closeGoogle2FAModal() {
-        const modal = document.getElementById('googleAuthModal');
-        if (modal) modal.style.display = 'none';
-        if (googleCooldownTimer) clearInterval(googleCooldownTimer);
-    }
-
-    function startGoogleResendTimer() {
-        if (googleCooldownTimer) clearInterval(googleCooldownTimer);
-        googleCooldownSeconds = 45;
-        const timerWrap = document.getElementById('google2FAResendWrap');
-        if (!timerWrap) return;
-
-        const updateUI = () => {
-            if (googleCooldownSeconds > 0) {
-                timerWrap.innerHTML = `
-                    <span class="google-resend-timer">
-                        Reenviar código em <strong>${googleCooldownSeconds}s</strong>
-                    </span>
-                `;
-            } else {
-                timerWrap.innerHTML = `
-                    <button type="button" class="google-resend-link" id="googleResendBtn">
-                        Não recebi o código. Reenviar agora
-                    </button>
-                `;
-                const btn = document.getElementById('googleResendBtn');
-                if (btn) {
-                    btn.onclick = async () => {
-                        try {
-                            window.showToast('Reenviando código 2FA...', 'info');
-                            await window.apiService.auth.requestGoogleCode(googleAccount.email, googleAccount.name);
-                            window.showToast(`Novo código 2FA enviado para ${googleAccount.email}!`, 'success');
-                            startGoogleResendTimer();
-                        } catch (err) {
-                            window.showToast(err.message || 'Erro ao reenviar código.', 'error');
-                        }
-                    };
-                }
-                clearInterval(googleCooldownTimer);
-            }
-        };
-
-        updateUI();
-        googleCooldownTimer = setInterval(() => {
-            googleCooldownSeconds--;
-            updateUI();
-        }, 1000);
-    }
-
-    return {
-        init,
-        switchView,
-        getCurrentView: () => currentView
     };
-})();
+}
 
-window.AuthModule = AuthModule;
+// 4. Recuperação - Etapa 2
+function setupRecoveryStep2() {
+    const form = document.getElementById('formRecoveryStep2');
+    if (!form) return;
+
+    const otpInputs = [
+        document.getElementById('otp1'),
+        document.getElementById('otp2'),
+        document.getElementById('otp3'),
+        document.getElementById('otp4')
+    ];
+    const errEl = document.getElementById('recoveryStep2Error');
+    const resendBtn = document.getElementById('btnRecoveryResend');
+    const recoveryEmail = sessionStorage.getItem('recovery_email') || '';
+
+    if (otpInputs[0]) otpInputs[0].focus();
+
+    otpInputs.forEach((inp, idx) => {
+        if (!inp) return;
+        inp.oninput = (e) => {
+            const cleanVal = e.target.value.replace(/\D/g, '');
+            inp.value = cleanVal ? cleanVal[0] : '';
+            if (cleanVal && idx < 3 && otpInputs[idx + 1]) {
+                otpInputs[idx + 1].focus();
+            }
+        };
+
+        inp.onkeydown = (e) => {
+            if (e.key === 'Backspace' && !inp.value && idx > 0 && otpInputs[idx - 1]) {
+                otpInputs[idx - 1].focus();
+            }
+        };
+
+        inp.onpaste = (e) => {
+            e.preventDefault();
+            const pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 4);
+            if (pasted) {
+                for (let i = 0; i < pasted.length; i++) {
+                    if (otpInputs[i]) otpInputs[i].value = pasted[i];
+                }
+                const nextIdx = Math.min(pasted.length, 3);
+                if (otpInputs[nextIdx]) otpInputs[nextIdx].focus();
+            }
+        };
+    });
+
+    if (resendBtn) {
+        resendBtn.onclick = async () => {
+            if (!recoveryEmail) {
+                window.showToast?.('Email não identificado. Reinicie a recuperação.', 'error');
+                return;
+            }
+            try {
+                const res = await window.apiService.auth.forgotPassword(recoveryEmail);
+                window.showToast?.(res.message, 'info', 5000);
+                otpInputs.forEach(i => { if (i) i.value = ''; });
+                if (otpInputs[0]) otpInputs[0].focus();
+            } catch (err) {
+                window.showToast?.(err.message, 'error');
+            }
+        };
+    }
+
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        if (errEl) errEl.textContent = '';
+        const code = otpInputs.map(i => i?.value || '').join('');
+        if (code.length < 4) {
+            if (errEl) errEl.textContent = 'Digite os 4 dígitos do código de verificação.';
+            return;
+        }
+
+        sessionStorage.setItem('recovery_code', code);
+        window.showToast?.('Código confirmado! Defina sua nova senha.', 'success');
+        setTimeout(() => {
+            window.location.href = 'nova-senha.html';
+        }, 600);
+    };
+}
+
+// 5. Recuperação - Etapa 3
+function setupRecoveryStep3() {
+    const form = document.getElementById('formRecoveryStep3');
+    if (!form) return;
+
+    const emailInput = document.getElementById('recoveryEmailStep3');
+    const passInput = document.getElementById('recoveryNewPassword');
+    const confirmInput = document.getElementById('recoveryConfirmNewPassword');
+    const submitBtn = document.getElementById('btnRecoveryStep3Submit');
+    const passErr = document.getElementById('recoveryNewPassError');
+    const confirmErr = document.getElementById('recoveryConfirmPassError');
+
+    const storedEmail = sessionStorage.getItem('recovery_email') || '';
+    const storedCode = sessionStorage.getItem('recovery_code') || '';
+    if (emailInput && storedEmail) {
+        emailInput.value = storedEmail;
+    }
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (passErr) passErr.textContent = '';
+        if (confirmErr) confirmErr.textContent = '';
+
+        const email = (emailInput?.value || storedEmail || '').trim();
+        const newPass = passInput?.value || '';
+        const confirmPass = confirmInput?.value || '';
+
+        let hasError = false;
+        if (!email) {
+            window.showToast?.('Informe o email.', 'error');
+            hasError = true;
+        }
+        if (newPass.length < 6) {
+            if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
+            hasError = true;
+        }
+        if (newPass !== confirmPass) {
+            if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
+            hasError = true;
+        }
+        if (hasError) return;
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+
+        try {
+            const res = await window.apiService.auth.resetPassword(email, storedCode, newPass);
+            sessionStorage.removeItem('recovery_email');
+            sessionStorage.removeItem('recovery_code');
+            window.showToast?.(res.message, 'success');
+            setTimeout(() => {
+                window.location.replace('login.html');
+            }, 800);
+        } catch (err) {
+            if (passErr) passErr.textContent = err.message || 'Erro ao redefinir senha.';
+            window.showToast?.(err.message || 'Erro ao redefinir senha.', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'LOGIN';
+        }
+    };
+}
+
+// 6. Google Auth & 2FA Modal
+let googleAccount = null;
+let googleCooldownTimer = null;
+let googleCooldownSeconds = 45;
+
+function handleGoogleTrigger() {
+    if (typeof window.launchGoogleAuth !== 'function') {
+        window.showToast?.('Inicializando serviço do Google...', 'info');
+        return;
+    }
+
+    const setLoading = (loading) => {
+        const btn = document.getElementById('btnLoginGoogle') || document.getElementById('btnRegisterGoogle');
+        if (btn) {
+            btn.disabled = loading;
+            const span = btn.querySelector('span');
+            if (span) span.textContent = loading ? 'Abrindo Google...' : 'Entrar com o Google';
+        }
+    };
+
+    window.launchGoogleAuth({
+        setLoading,
+        onError: (msg) => {
+            window.showToast?.(msg, 'error');
+        },
+        onAccountSelected: async (account) => {
+            if (account.directLoginSuccess) {
+                window.showToast?.(`Bem-vindo, ${account.data.user.email}!`, 'success');
+                setTimeout(() => {
+                    window.location.replace('ia-preditiva.html');
+                }, 600);
+                return;
+            }
+
+            try {
+                window.showToast?.(`Enviando código de verificação para ${account.email}...`, 'info');
+                await window.apiService.auth.requestGoogleCode(account.email, account.name);
+                window.showToast?.(`Código 2FA enviado para ${account.email}!`, 'success');
+                googleAccount = account;
+                openGoogle2FAModal(account);
+            } catch (err) {
+                window.showToast?.(err.message || 'Falha ao enviar código 2FA.', 'error');
+            }
+        }
+    });
+}
+
+function setupGoogle2FAModal() {
+    const modal = document.getElementById('googleAuthModal');
+    if (!modal) return;
+
+    const closeBtn = document.getElementById('googleModalCloseBtn');
+    const switchAccBtn = document.getElementById('googleSwitchAccountBtn');
+    const form2FA = document.getElementById('google2FAForm');
+
+    if (closeBtn) closeBtn.onclick = closeGoogle2FAModal;
+    modal.onclick = (e) => { if (e.target === modal) closeGoogle2FAModal(); };
+
+    if (switchAccBtn) {
+        switchAccBtn.onclick = () => {
+            closeGoogle2FAModal();
+            handleGoogleTrigger();
+        };
+    }
+
+    const inputs = [0, 1, 2, 3].map(i => document.getElementById(`google-2fa-${i}`));
+    inputs.forEach((inp, idx) => {
+        if (!inp) return;
+        inp.oninput = (e) => {
+            const cleaned = e.target.value.replace(/\D/g, '');
+            if (cleaned.length > 1) {
+                const chars = cleaned.slice(0, 4).split('');
+                for (let i = 0; i < 4; i++) {
+                    if (inputs[i]) inputs[i].value = chars[i] || '';
+                }
+                const lastIdx = Math.min(chars.length - 1, 3);
+                if (inputs[lastIdx]) inputs[lastIdx].focus();
+                return;
+            }
+            inp.value = cleaned.slice(-1);
+            if (cleaned && idx < 3 && inputs[idx + 1]) {
+                inputs[idx + 1].focus();
+            }
+        };
+
+        inp.onkeydown = (e) => {
+            if (e.key === 'Backspace' && !inp.value && idx > 0 && inputs[idx - 1]) {
+                inputs[idx - 1].focus();
+                inputs[idx - 1].value = '';
+            }
+        };
+    });
+
+    if (form2FA) {
+        form2FA.onsubmit = async (e) => {
+            e.preventDefault();
+            const code = inputs.map(i => i?.value || '').join('').trim();
+            const errBox = document.getElementById('google2FAError');
+            if (errBox) errBox.style.display = 'none';
+
+            if (code.length < 4) {
+                if (errBox) {
+                    errBox.style.display = 'flex';
+                    errBox.querySelector('span').textContent = 'Digite os 4 dígitos do código.';
+                }
+                return;
+            }
+
+            const submitBtn = document.getElementById('google2FASubmitBtn');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="login-spinner"></span>';
+            }
+
+            try {
+                const data = await window.apiService.auth.verifyGoogleCode(
+                    googleAccount.email,
+                    code,
+                    googleAccount.name
+                );
+                window.showToast?.(`Autenticação aprovada! Bem-vindo, ${data.user.email}!`, 'success');
+                closeGoogle2FAModal();
+                setTimeout(() => {
+                    window.location.replace('ia-preditiva.html');
+                }, 600);
+            } catch (err) {
+                if (errBox) {
+                    errBox.style.display = 'flex';
+                    errBox.querySelector('span').textContent = err.message || 'Código inválido.';
+                }
+                window.showToast?.(err.message || 'Código de verificação inválido.', 'error');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Confirmar';
+                }
+            }
+        };
+    }
+}
+
+function openGoogle2FAModal(account) {
+    const modal = document.getElementById('googleAuthModal');
+    if (!modal) return;
+
+    const emailBadge = document.getElementById('google2FAEmailBadge');
+    if (emailBadge) {
+        emailBadge.innerHTML = `
+            <i class="ph ph-envelope-simple" style="margin-right: 6px;"></i>
+            <strong>${account.email}</strong>
+        `;
+    }
+
+    [0, 1, 2, 3].forEach(i => {
+        const inp = document.getElementById(`google-2fa-${i}`);
+        if (inp) inp.value = '';
+    });
+    const errBox = document.getElementById('google2FAError');
+    if (errBox) errBox.style.display = 'none';
+
+    startGoogleResendTimer();
+    modal.style.display = 'flex';
+
+    setTimeout(() => {
+        const first = document.getElementById('google-2fa-0');
+        if (first) first.focus();
+    }, 100);
+}
+
+function closeGoogle2FAModal() {
+    const modal = document.getElementById('googleAuthModal');
+    if (modal) modal.style.display = 'none';
+    if (googleCooldownTimer) clearInterval(googleCooldownTimer);
+}
+
+function startGoogleResendTimer() {
+    if (googleCooldownTimer) clearInterval(googleCooldownTimer);
+    googleCooldownSeconds = 45;
+    const timerWrap = document.getElementById('google2FAResendWrap');
+    if (!timerWrap) return;
+
+    const updateUI = () => {
+        if (googleCooldownSeconds > 0) {
+            timerWrap.innerHTML = `
+                <span class="google-resend-timer">
+                    Reenviar código em <strong>${googleCooldownSeconds}s</strong>
+                </span>
+            `;
+        } else {
+            timerWrap.innerHTML = `
+                <button type="button" class="google-resend-link" id="googleResendBtn">
+                    Não recebi o código. Reenviar agora
+                </button>
+            `;
+            const btn = document.getElementById('googleResendBtn');
+            if (btn) {
+                btn.onclick = async () => {
+                    try {
+                        window.showToast?.('Reenviando código 2FA...', 'info');
+                        await window.apiService.auth.requestGoogleCode(googleAccount.email, googleAccount.name);
+                        window.showToast?.(`Novo código 2FA enviado para ${googleAccount.email}!`, 'success');
+                        startGoogleResendTimer();
+                    } catch (err) {
+                        window.showToast?.(err.message || 'Erro ao reenviar código.', 'error');
+                    }
+                };
+            }
+            clearInterval(googleCooldownTimer);
+        }
+    };
+
+    updateUI();
+    googleCooldownTimer = setInterval(() => {
+        googleCooldownSeconds--;
+        updateUI();
+    }, 1000);
+}
