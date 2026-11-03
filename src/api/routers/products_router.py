@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
@@ -23,7 +24,7 @@ def list_products(
     limit: int = Query(20, ge=1, le=100, description="Itens por página"),
     search: Optional[str] = Query(None, description="Filtro de busca por nome ou categoria"),
     category: Optional[str] = Query(None, description="Filtro de categoria"),
-    platform: Optional[str] = Query(None, description="Filtro de plataforma (mercadolivre, amazon)"),
+    platform: Optional[str] = Query(None, description="Filtro de plataforma"),
     db: Session = Depends(get_db)
 ):
     """Retorna lista de produtos cadastrados com paginação e totalizadores de vendas."""
@@ -95,39 +96,12 @@ def list_products(
     )
 
 
-OFFICIAL_MERCADOLIVRE_CATEGORIES = [
-    "Tecnologia",
-    "Eletrodomésticos",
-    "Esportes e Fitness",
-    "Casa e Móveis",
-    "Ferramentas",
-    "Construção",
-    "Beleza e Cuidado Pessoal",
-    "Moda",
-    "Saúde",
-    "Acessórios para Veículos",
-    "Supermercado",
-    "Bebês",
-    "Brinquedos",
-    "Livros",
-    "Pet Shop",
-    "Indústria e Comércio",
-    "Para seu Negócio",
-    "Veículos"
-]
-
-@router.get("/categories", response_model=List[str], summary="Listar todas as categorias oficiais do Mercado Livre")
+@router.get("/categories", response_model=List[str], summary="Listar categorias de produtos")
 def get_categories(db: Session = Depends(get_db)):
-    """Retorna lista de categorias oficiais do Mercado Livre presentes na base."""
-    categories = db.query(Product.category).filter(Product.category.isnot(None)).distinct().all()
-    present_cats = {c[0] for c in categories if c[0]}
-
-    ordered = [c for c in OFFICIAL_MERCADOLIVRE_CATEGORIES if c in present_cats]
-    for c in present_cats:
-        if c not in ordered:
-            ordered.append(c)
-
-    return ordered if ordered else OFFICIAL_MERCADOLIVRE_CATEGORIES
+    """Retorna lista de categorias cadastradas na base."""
+    categories = db.query(Product.category).filter(Product.category.isnot(None), Product.is_active.is_(True)).distinct().all()
+    unique_cats = sorted(list({c[0] for c in categories if c[0]}))
+    return unique_cats if unique_cats else ["Geral", "Tecnologia", "Moda", "Casa e Móveis"]
 
 
 @router.get("/top-sales", response_model=List[TopProductItem], summary="Ranking dos produtos mais vendidos no mês")
@@ -137,10 +111,7 @@ def get_top_selling_products(
     days: int = Query(30, ge=1, le=365, description="Janela de dias para apuração de vendas (padrão: 30 dias)"),
     db: Session = Depends(get_db)
 ):
-    """Retorna os produtos com maior volume de vendas apuradas no período.
-    Se nenhuma categoria for especificada (Modo GERAIS), retorna os produtos TOP 1 líderes de cada nicho/categoria.
-    Se uma categoria específica for informada, retorna os Top N produtos mais vendidos daquela categoria.
-    """
+    """Retorna os produtos com maior volume de vendas apuradas no período."""
     latest_date = db.query(func.max(SalesHistory.date)).scalar()
 
     query = db.query(
@@ -176,7 +147,7 @@ def get_top_selling_products(
             ))
         return items
 
-    # Modo GERAIS: Seleciona o Top 1 mais vendido de cada nicho/categoria distinto
+    # Modo GERAIS: Seleciona o Top 1 mais vendido de cada nicho/categoria
     all_results = query.group_by(Product.id, Product.title, Product.category, Product.price)\
                        .order_by(desc("total_sold"))\
                        .all()
@@ -204,26 +175,39 @@ def get_top_selling_products(
     return items
 
 
-from pydantic import BaseModel
-
 class AutocompleteItem(BaseModel):
     id: Optional[int] = None
     title: str
     category: str
     price: float
-    platform: str = "mercadolivre"
+    platform: str = "ecommerce"
     is_live_suggestion: bool = False
 
 
-@router.get("/autocomplete", response_model=List[AutocompleteItem], summary="Autocompletar e recomendações de modelos em tempo real")
+@router.get("/autocomplete", response_model=List[AutocompleteItem], summary="Autocompletar de produtos")
 def autocomplete_products(
     q: str = Query(..., min_length=1, description="Termo de pesquisa"),
     limit: int = Query(8, ge=1, le=20, description="Quantidade máxima de recomendações"),
     db: Session = Depends(get_db)
 ):
-    """Retorna recomendações inteligentes e modelos de produtos em tempo real para a busca preditiva."""
-    from src.collectors.live_discovery_engine import live_discovery
-    return live_discovery.get_autocomplete_suggestions(q, db, limit=limit)
+    """Retorna sugestões de produtos a partir da base de dados interna."""
+    query = f"%{q.strip()}%"
+    prods = db.query(Product).filter(
+        (Product.title.ilike(query)) | (Product.category.ilike(query)),
+        Product.is_active.is_(True)
+    ).limit(limit).all()
+
+    return [
+        AutocompleteItem(
+            id=p.id,
+            title=p.title,
+            category=p.category or "Geral",
+            price=p.price or 0.0,
+            platform=p.platform or "ecommerce",
+            is_live_suggestion=False
+        )
+        for p in prods
+    ]
 
 
 @router.get("/{product_id}", response_model=ProductDetailResponse, summary="Obter detalhes de um produto específico")
@@ -278,6 +262,7 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
         sales_history=sales_history_list
     )
 
+
 @router.get("/{product_id}/history", response_model=List[SalesHistoryResponse], summary="Obter série temporal de vendas")
 def get_product_sales_history(
     product_id: int,
@@ -311,90 +296,89 @@ def get_product_sales_history(
     return history
 
 
-class DiscoverLiveRequest(BaseModel):
-    query: str
-    limit: int = 5
+class CreateProductRequest(BaseModel):
+    title: str = Field(..., min_length=2, max_length=500)
+    category: str = Field(..., min_length=2, max_length=255)
+    price: float = Field(..., gt=0)
+    platform: Optional[str] = "ecommerce"
+    currency: Optional[str] = "BRL"
+    condition: Optional[str] = "new"
+    url: Optional[str] = None
 
-class DiscoverLiveResponse(BaseModel):
-    query: str
-    total_found: int
-    products: List[ProductResponse]
-    message: str
 
+@router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, summary="Cadastrar novo produto")
+def create_product(payload: CreateProductRequest, db: Session = Depends(get_db)):
+    """Cadastra um novo produto no catálogo interno."""
+    new_prod = Product(
+        external_id=f"INT_{int(datetime.utcnow().timestamp())}",
+        platform=payload.platform or "ecommerce",
+        title=payload.title,
+        category=payload.category,
+        price=payload.price,
+        currency=payload.currency or "BRL",
+        condition=payload.condition or "new",
+        url=payload.url,
+        is_active=True
+    )
+    db.add(new_prod)
+    db.commit()
+    db.refresh(new_prod)
 
-@router.post("/discover-live", response_model=DiscoverLiveResponse, summary="Buscar e importar produtos em tempo real da Amazon e Mercado Livre")
-def discover_live_products(
-    request: DiscoverLiveRequest,
-    db: Session = Depends(get_db)
-):
-    """Busca qualquer produto em tempo real nas APIs de e-commerce, cadastra no banco e prepara para a IA."""
-    from src.collectors.live_discovery_engine import live_discovery
-
-    query_str = request.query.strip()
-    if not query_str:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Informe um termo de busca.")
-
-    imported_prods = live_discovery.discover_and_import(query_str, db, max_items=request.limit)
-
-    if not imported_prods:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Produto não localizado ou sem comercialização ativa no Mercado Livre / Amazon (itens restritos pela ANVISA, medicamentos controlados ou termos sem catálogo oficial)."
-        )
-
-    items = []
-    for prod in imported_prods:
-        sales_agg = db.query(
-            func.sum(SalesHistory.quantity_sold).label("total_units"),
-            func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, prod.price or 0.0)).label("total_rev")
-        ).filter(SalesHistory.product_id == prod.id).first()
-
-        total_units = int(sales_agg.total_units or 0)
-        total_rev = float(sales_agg.total_rev or 0.0)
-
-        items.append(ProductResponse(
-            id=prod.id,
-            external_id=prod.external_id,
-            platform=prod.platform,
-            title=prod.title,
-            category=prod.category,
-            price=prod.price,
-            currency=prod.currency,
-            condition=prod.condition,
-            url=prod.url,
-            attributes=prod.attributes,
-            is_active=prod.is_active,
-            created_at=prod.created_at,
-            total_sold_units=total_units,
-            total_revenue=round(total_rev, 2)
-        ))
-
-    return DiscoverLiveResponse(
-        query=query_str,
-        total_found=len(items),
-        products=items,
-        message=f"{len(items)} produto(s) sincronizados em tempo real com sucesso!"
+    return ProductResponse(
+        id=new_prod.id,
+        external_id=new_prod.external_id,
+        platform=new_prod.platform,
+        title=new_prod.title,
+        category=new_prod.category,
+        price=new_prod.price,
+        currency=new_prod.currency,
+        condition=new_prod.condition,
+        url=new_prod.url,
+        attributes=new_prod.attributes,
+        is_active=new_prod.is_active,
+        created_at=new_prod.created_at,
+        total_sold_units=0,
+        total_revenue=0.0
     )
 
 
-class SyncCategoriesResponse(BaseModel):
-    status: str
-    total_synced_products: int
-    sample_products: List[str]
-    message: str
+class CreateSaleRequest(BaseModel):
+    date: Optional[datetime] = None
+    quantity_sold: int = Field(..., gt=0)
+    price_at_date: Optional[float] = None
+    available_quantity: Optional[int] = None
 
 
-@router.post("/sync-categories", response_model=SyncCategoriesResponse, summary="Sincronizar massivamente as principais categorias do mercado")
-def sync_top_categories_endpoint(
-    limit_per_term: int = Query(2, ge=1, le=10, description="Quantidade por termo"),
-    db: Session = Depends(get_db)
-):
-    """Varre e importa os top produtos das 15 principais categorias do Mercado Livre e Amazon."""
-    from src.collectors.category_harvester import harvest_all_top_categories
-    result = harvest_all_top_categories(db, limit_per_term=limit_per_term)
-    return SyncCategoriesResponse(
-        status=result["status"],
-        total_synced_products=result["total_synced_products"],
-        sample_products=result["sample_products"],
-        message=f"{result['total_synced_products']} produtos do catálogo multi-canal sincronizados com sucesso!"
+@router.post("/{product_id}/sales", response_model=SalesHistoryResponse, status_code=status.HTTP_201_CREATED, summary="Registrar venda para um produto")
+def record_sale(product_id: int, payload: CreateSaleRequest, db: Session = Depends(get_db)):
+    """Registra uma venda no histórico de um produto."""
+    prod = db.query(Product).filter(Product.id == product_id).first()
+    if not prod:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produto não encontrado.")
+
+    sale_date = payload.date or datetime.utcnow()
+    unit_price = payload.price_at_date if payload.price_at_date is not None else (prod.price or 0.0)
+
+    sale = SalesHistory(
+        product_id=prod.id,
+        date=sale_date,
+        quantity_sold=payload.quantity_sold,
+        price_at_date=unit_price,
+        available_quantity=payload.available_quantity,
+        platform=prod.platform,
+        collected_at=datetime.utcnow()
+    )
+    db.add(sale)
+    db.commit()
+    db.refresh(sale)
+
+    return SalesHistoryResponse(
+        id=sale.id,
+        product_id=sale.product_id,
+        date=sale.date,
+        quantity_sold=sale.quantity_sold,
+        price_at_date=unit_price,
+        available_quantity=sale.available_quantity,
+        platform=sale.platform,
+        revenue=round(sale.quantity_sold * unit_price, 2)
     )
