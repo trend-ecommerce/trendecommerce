@@ -100,7 +100,7 @@ body.auth-mode textarea {
     background: linear-gradient(90deg, #020B14, #071B2E);
     width: min(741px, 94vw);
     min-height: min(520px, 72vh);
-    max-height: min(620px, 78vh);
+    max-height: min(650px, 85vh);
     border-radius: clamp(36px, 5vw, 77px);
     overflow: hidden;
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
@@ -133,16 +133,18 @@ body.auth-mode textarea {
     letter-spacing: 0.5px;
 }
 
-/* Botões do Sistema de Autenticação */
+/* Botões do Sistema de Autenticação com Efeito Vidro (Glassmorphism Figma) */
 .login-button,
 .button-right {
-    background: #00AEEF20;
-    color: #fff;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(0, 174, 239, 0.22) 50%, rgba(0, 114, 255, 0.16) 100%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.32);
     border-radius: 47px;
     cursor: pointer;
     font-size: clamp(15px, 2vh, 22px);
-    font-weight: 500;
+    font-weight: 600;
     white-space: nowrap;
     min-height: clamp(42px, 5.2vh, 52px);
     width: max-content;
@@ -152,30 +154,44 @@ body.auth-mode textarea {
     align-items: center;
     justify-content: center;
     gap: 8px;
-    transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+    box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 2px 0 rgba(0, 174, 239, 0.25), 0 8px 24px -4px rgba(0, 0, 0, 0.35), 0 0 16px rgba(0, 174, 239, 0.2);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     margin-top: clamp(4px, 1vh, 10px);
     text-decoration: none;
     user-select: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .login-button:hover,
 .button-right:hover:not(:disabled) {
-    background: #00AEEF35;
-    border-color: rgba(255, 255, 255, 0.4);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.28) 0%, rgba(0, 174, 239, 0.36) 50%, rgba(0, 114, 255, 0.28) 100%);
+    border-color: rgba(255, 255, 255, 0.65);
+    box-shadow: inset 0 1px 2px 0 rgba(255, 255, 255, 0.75), inset 0 -1px 2px 0 rgba(0, 212, 255, 0.4), 0 12px 28px -4px rgba(0, 0, 0, 0.4), 0 0 24px rgba(0, 212, 255, 0.45);
+    transform: translateY(-2px);
+    color: #ffffff;
 }
 
 .login-button:active,
 .button-right:active:not(:disabled) {
-    transform: scale(0.98);
+    transform: translateY(0) scale(0.98);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(0, 174, 239, 0.4) 100%);
+    box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .button-right:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
+    box-shadow: none;
 }
 
 .button-right {
     align-self: center;
+    margin-top: clamp(20px, 3vh, 32px);
+    margin-bottom: clamp(4px, 1vh, 10px);
+}
+
+.login-button {
+    margin-top: clamp(16px, 2.5vh, 26px);
 }
 
 /* Divisor de Autenticação */
@@ -186,7 +202,7 @@ body.auth-mode textarea {
     align-items: center;
     justify-content: center;
     gap: 12px;
-    margin: clamp(2px, 0.8vh, 6px) 0;
+    margin: clamp(8px, 1.5vh, 14px) auto;
     color: #8DA2BD;
     font-size: clamp(10px, 1.3vh, 12px);
     font-weight: 600;
@@ -213,8 +229,10 @@ body.auth-mode textarea {
     max-width: 350px;
     min-height: clamp(38px, 4.6vh, 46px);
     padding: 0 18px;
-    background: rgba(9, 32, 60, 0.65);
-    border: 1px solid rgba(0, 180, 216, 0.35);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(9, 32, 60, 0.55) 50%, rgba(0, 174, 239, 0.18) 100%);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.28);
     border-radius: 47px;
     color: #ffffff;
     font-family: 'Inter', sans-serif;
@@ -222,26 +240,30 @@ body.auth-mode textarea {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.38), inset 0 -1px 2px 0 rgba(0, 174, 239, 0.2), 0 8px 20px rgba(0, 0, 0, 0.3), 0 0 14px rgba(0, 180, 216, 0.18);
     user-select: none;
     align-self: center;
     text-decoration: none;
 }
 
 .btn-google-auth:hover:not(:disabled) {
-    background: rgba(13, 44, 82, 0.9);
-    border-color: #00d4ff;
-    box-shadow: 0 6px 18px rgba(0, 180, 216, 0.35), 0 0 12px rgba(0, 212, 255, 0.2);
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(13, 44, 82, 0.75) 50%, rgba(0, 212, 255, 0.28) 100%);
+    border-color: rgba(255, 255, 255, 0.55);
+    box-shadow: inset 0 1px 2px 0 rgba(255, 255, 255, 0.65), 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 20px rgba(0, 212, 255, 0.4);
+    transform: translateY(-2px);
+    color: #ffffff;
 }
 
 .btn-google-auth:active:not(:disabled) {
-    transform: scale(0.98);
+    transform: translateY(0) scale(0.98);
+    background: rgba(13, 44, 82, 0.85);
+    box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.2), 0 4px 10px rgba(0, 0, 0, 0.3);
 }
 
 .btn-google-auth:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
+    box-shadow: none;
 }
 
 .btn-google-auth .google-svg-icon {
@@ -308,7 +330,7 @@ body.auth-mode textarea {
 .login-span {
     display: block;
     color: #A9B8C7;
-    margin-top: 0;
+    margin-top: clamp(12px, 1.8vh, 18px);
     font-size: clamp(13px, 1.6vh, 15px);
     font-weight: 500;
     text-decoration: none;
@@ -349,16 +371,23 @@ body.auth-mode textarea {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: transparent;
-    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 50%;
     cursor: pointer;
-    color: #fff;
-    transition: color 0.2s ease;
+    color: #e0f2fe;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 2px 8px rgba(0, 0, 0, 0.25);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .password-container button:hover {
-    color: #00d4ff;
+    color: #00f0ff;
+    background: rgba(0, 174, 239, 0.28);
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: inset 0 1px 1.5px rgba(255, 255, 255, 0.5), 0 0 14px rgba(0, 212, 255, 0.4);
+    transform: translateY(-50%) scale(1.08);
 }
 
 .password-container button i {
@@ -424,19 +453,27 @@ body.auth-mode textarea {
 }
 
 .codigo-resend button {
-    background: transparent;
-    border: none;
+    background: rgba(0, 174, 239, 0.14);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(0, 180, 216, 0.35);
+    border-radius: 20px;
     color: #00d4ff;
     cursor: pointer;
     font-size: inherit;
     font-weight: 600;
-    padding: 0;
-    text-decoration: underline;
-    transition: color 0.2s ease;
+    padding: 4px 14px;
+    text-decoration: none;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.25);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .codigo-resend button:hover {
     color: #ffffff;
+    background: rgba(0, 174, 239, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.5), 0 0 14px rgba(0, 212, 255, 0.4);
+    transform: translateY(-1px);
 }
 
 /* Mensagens de Erro de Validação */
@@ -601,7 +638,7 @@ body.auth-mode textarea {
         min-height: 42px;
         font-size: 16px;
         padding: 0 24px;
-        margin-top: 4px;
+        margin-top: 18px;
     }
 
     .login-span {
@@ -721,8 +758,10 @@ body.auth-mode textarea {
 }
 
 .google-oauth-close-btn {
-    background: transparent;
-    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     color: #9aa0a6;
     font-size: 20px;
     width: 34px;
@@ -732,12 +771,16 @@ body.auth-mode textarea {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.18s ease;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.2);
+    transition: all 0.2s ease;
 }
 
 .google-oauth-close-btn:hover {
     color: #ffffff;
-    background: #28292a;
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.45);
+    box-shadow: inset 0 1px 1.5px rgba(255, 255, 255, 0.45), 0 0 12px rgba(255, 255, 255, 0.25);
+    transform: scale(1.06);
 }
 
 /* Grid de 2 Colunas Oficial Google */
@@ -960,25 +1003,33 @@ body.auth-mode textarea {
 }
 
 .google-btn-text {
-    background: transparent;
-    border: none;
+    background: rgba(138, 180, 248, 0.1);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(138, 180, 248, 0.25);
     color: #8ab4f8;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    padding: 8px 12px;
+    padding: 8px 16px;
     border-radius: 20px;
-    transition: background-color 0.15s ease;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.18);
+    transition: all 0.2s ease;
 }
 
 .google-btn-text:hover {
-    background: rgba(138, 180, 248, 0.1);
+    background: rgba(138, 180, 248, 0.22);
+    border-color: rgba(138, 180, 248, 0.5);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.35), 0 0 12px rgba(138, 180, 248, 0.3);
+    transform: translateY(-1px);
 }
 
 .google-btn-primary {
-    background: #8ab4f8;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(138, 180, 248, 0.85) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     color: #041e49;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.45);
     border-radius: 24px;
     height: 40px;
     padding: 0 24px;
@@ -988,19 +1039,22 @@ body.auth-mode textarea {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+    box-shadow: inset 0 1px 1.5px rgba(255, 255, 255, 0.65), 0 4px 16px rgba(138, 180, 248, 0.35);
+    transition: all 0.2s ease;
 }
 
 .google-btn-primary:hover:not(:disabled) {
-    background: #a8c7fa;
-    box-shadow: 0 2px 10px rgba(138, 180, 248, 0.4);
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.45) 0%, rgba(168, 199, 250, 0.95) 100%);
+    border-color: rgba(255, 255, 255, 0.75);
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.85), 0 6px 22px rgba(138, 180, 248, 0.55);
+    transform: translateY(-2px);
 }
 
 .google-btn-primary:disabled {
     background: #3c4043;
     color: #80868b;
     cursor: not-allowed;
+    box-shadow: none;
 }
 
 /* 2-Factor Authentication (2FA) */
@@ -1054,18 +1108,26 @@ body.auth-mode textarea {
 }
 
 .google-resend-link {
-    background: transparent;
-    border: none;
+    background: rgba(138, 180, 248, 0.1);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(138, 180, 248, 0.25);
+    border-radius: 16px;
     color: #8ab4f8;
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    padding: 0;
-    text-decoration: underline;
+    padding: 3px 12px;
+    text-decoration: none;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15);
+    transition: all 0.2s ease;
 }
 
 .google-resend-link:hover {
-    color: #a8c7fa;
+    color: #ffffff;
+    background: rgba(138, 180, 248, 0.22);
+    border-color: rgba(138, 180, 248, 0.45);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 0 10px rgba(138, 180, 248, 0.25);
 }
 
 .google-resend-timer {
