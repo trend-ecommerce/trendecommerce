@@ -122,16 +122,23 @@ def get_vendas_api_status():
 def get_top_sales(
     limit: int = Query(10, ge=1, le=50, description="Quantidade de produtos"),
     category: Optional[str] = Query(None, description="Filtrar por categoria"),
+    days: int = Query(30, ge=1, le=3650, description="Janela de dias históricos para o cálculo (padrão: 30 dias do mês)"),
     db: Session = Depends(get_db)
 ):
-    """Calcula os produtos campeões de vendas."""
+    """Calcula os produtos campeões de vendas no período (últimos 30 dias / mês)."""
+    latest_date = db.query(func.max(SalesHistory.date)).scalar()
+
     query = db.query(
         SalesHistory.product_id,
         func.sum(SalesHistory.quantity_sold).label("total_units"),
         func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, 100.0)).label("total_revenue")
-    ).group_by(SalesHistory.product_id)
+    )
 
-    sales_results = query.order_by(desc("total_units")).all()
+    if latest_date and days:
+        min_date = latest_date - timedelta(days=days)
+        query = query.filter(SalesHistory.date >= min_date)
+
+    sales_results = query.group_by(SalesHistory.product_id).order_by(desc("total_units")).all()
 
     items = []
     rank = 1
