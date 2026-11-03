@@ -16,7 +16,7 @@ import requests
 
 from src.collectors.mercadolivre_collector import MercadoLivreCollector
 from src.database.connection import DatabaseManager
-from src.database.models import Product, SalesHistory, SearchTrend, CollectionLog
+from src.database.models import Product, SalesHistory
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ class LiveTracker:
                         session.add(sale)
             
             # Log de coleta
-            log = CollectionLog(
+            # log = CollectionLog(
                 collector_name="live_tracker_meli",
                 endpoint="/sites/MLB/search",
                 started_at=datetime.utcnow(),
@@ -153,7 +153,7 @@ class LiveTracker:
                 records_collected=len(saved_products),
                 success=True,
             )
-            session.add(log)
+            # session.add(log)
             
         logger.info(f"Sincronizados {len(saved_products)} produtos com histórico de vendas.")
         return saved_products

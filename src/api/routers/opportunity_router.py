@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 import pandas as pd
 
 from src.database.connection import get_session
-from src.database.models import Product, SalesHistory, SearchTrend, MarketplaceFeedback, MacroIndicator
+from src.database.models import Product, SalesHistory
 from src.ml.opportunity_recommender import OpportunityRecommender
 
 router = APIRouter(prefix="/api/v1/recommendations", tags=["Recomendações & Oportunidades"])
@@ -61,26 +61,10 @@ def get_top_products_to_sell(
         else:
             forecasts[p_id] = {"predicted_units": 25, "growth_pct": 5.0}
 
-    trends = db.query(SearchTrend).all()
-    trends_df = pd.DataFrame([{
-        "keyword": t.keyword,
-        "interest_score": t.interest_score,
-        "date": t.date
-    } for t in trends]) if trends else None
-
-    feedbacks = db.query(MarketplaceFeedback).all()
-    feedbacks_df = pd.DataFrame([{
-        "product_id": fb.product_id,
-        "questions_count": fb.questions_count,
-        "average_rating": fb.average_rating
-    } for fb in feedbacks]) if feedbacks else None
-
     recommender = OpportunityRecommender()
     recommendations = recommender.evaluate_opportunities(
         products_df=products_df,
         forecasts=forecasts,
-        trends_df=trends_df,
-        feedbacks_df=feedbacks_df,
         horizon_days=days
     )
 
@@ -111,20 +95,11 @@ def get_top_products_to_sell(
         ]
     }
 
+
 @router.get("/macro-indicators")
-def get_macro_indicators(db: Session = Depends(get_session)):
+def get_macro_indicators():
     """Retorna os indicadores macroeconômicos e feriados ativos no sistema."""
-    indicators = db.query(MacroIndicator).order_by(MacroIndicator.date.desc()).limit(50).all()
     return {
-        "count": len(indicators),
-        "indicators": [
-            {
-                "date": ind.date.strftime("%Y-%m-%d"),
-                "type": ind.indicator_type,
-                "value": ind.value,
-                "label": ind.label,
-                "source": ind.source
-            }
-            for ind in indicators
-        ]
+        "count": 0,
+        "indicators": []
     }
