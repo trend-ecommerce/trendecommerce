@@ -1,3 +1,5 @@
+import difflib
+import unicodedata
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -165,6 +167,77 @@ def get_top_sales(
     return items
 
 
+def _strip_accents(s: str) -> str:
+    return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
+
+
+def search_catalog_products(q: str, db: Session, limit: int = 8) -> List[Product]:
+    """Busca produtos no catálogo oficial por correspondência exata, palavras-chave ou similaridade de caracteres."""
+    q_str = q.strip()
+    if not q_str:
+        return []
+
+    q_norm = _strip_accents(q_str)
+    q_tokens = [w for w in q_norm.split() if len(w) >= 2]
+    if not q_tokens:
+        q_tokens = [q_norm]
+
+    # 1. Correspondência direta via SQL (rápida)
+    direct_query = db.query(Product).filter(
+        Product.is_active.is_(True),
+        (Product.title.ilike(f"%{q_str}%")) | (Product.category.ilike(f"%{q_str}%"))
+    ).limit(limit).all()
+
+    if len(direct_query) >= limit:
+        return direct_query
+
+    # 2. Ranqueamento por similaridade de caracteres contra produtos ativos
+    all_active = db.query(Product).filter(Product.is_active.is_(True)).all()
+    seen_ids = {p.id for p in direct_query}
+    scored = [(2.0, p) for p in direct_query]
+
+    for p in all_active:
+        if p.id in seen_ids:
+            continue
+
+        p_title_norm = _strip_accents(p.title)
+        p_tokens = [w for w in p_title_norm.split() if len(w) >= 2]
+
+        # Frase completa no título
+        if q_norm in p_title_norm:
+            score = 2.0 + (len(q_norm) / max(len(p_title_norm), 1))
+            scored.append((score, p))
+            seen_ids.add(p.id)
+            continue
+
+        # Similaridade termo a termo / caracteres parecidos
+        token_sims = []
+        for qt in q_tokens:
+            best_sim = 0.0
+            for pt in p_tokens:
+                if qt == pt:
+                    sim = 1.0
+                elif len(qt) >= 4 and len(pt) >= 4 and (qt in pt or pt in qt):
+                    sim = len(qt) / len(pt) if len(qt) < len(pt) else len(pt) / len(qt)
+                else:
+                    sim = difflib.SequenceMatcher(None, qt, pt).ratio()
+                if sim > best_sim:
+                    best_sim = sim
+            token_sims.append(best_sim)
+
+        max_sim = max(token_sims) if token_sims else 0.0
+        strong_matches = [s for s in token_sims if s >= 0.70]
+
+        if strong_matches:
+            score = (max_sim * 0.6) + ((sum(strong_matches) / len(q_tokens)) * 0.4)
+            if score >= 0.50:
+                scored.append((score, p))
+                seen_ids.add(p.id)
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [p for _, p in scored[:limit]]
+
+
 class AutocompleteItem(BaseModel):
     id: Optional[int] = None
     title: str
@@ -180,7 +253,7 @@ def autocomplete_products(
     limit: int = Query(8, ge=1, le=20, description="Quantidade máxima de recomendações"),
     db: Session = Depends(get_db)
 ):
-    """Retorna sugestões em tempo real buscando no catálogo do TrendCommerce e na API de Vendas."""
+    """Retorna sugestões do catálogo cadastrado com correspondência exata ou caracteres parecidos."""
     q_str = q.strip()
     prohibited = {
         "maconha", "cannabis", "cocaina", "crack", "lsd", "ecstasy", "mdma", "heroina", 
@@ -189,73 +262,19 @@ def autocomplete_products(
     }
     if any(p in q_str.lower() for p in prohibited):
         return []
-    results = db.query(Product).filter(
-        Product.is_active.is_(True),
-        (Product.title.ilike(f"%{q_str}%")) | (Product.category.ilike(f"%{q_str}%"))
-    ).limit(limit).all()
 
-    items = [
+    matched = search_catalog_products(q_str, db, limit=limit)
+    return [
         AutocompleteItem(
             id=p.id,
             title=p.title,
             category=p.category or "Geral",
-            price=p.price,
+            price=p.price or 0.0,
             platform=p.platform,
             is_live_suggestion=False
         )
-        for p in results
+        for p in matched
     ]
-
-    # Se o banco local tiver poucos resultados, buscar por palavras ou consultar a API de vendas
-    if len(items) < limit:
-        for word in q_str.split():
-            if len(word) >= 3:
-                w_results = db.query(Product).filter(
-                    Product.is_active.is_(True),
-                    Product.title.ilike(f"%{word}%")
-                ).limit(limit).all()
-                for p in w_results:
-                    if not any(it.id == p.id for it in items):
-                        items.append(AutocompleteItem(
-                            id=p.id,
-                            title=p.title,
-                            category=p.category or "Geral",
-                            price=p.price,
-                            platform=p.platform,
-                            is_live_suggestion=False
-                        ))
-            if len(items) >= limit:
-                break
-
-    if len(items) < limit:
-        api_prods = vendas_client.get_produtos(page=1, page_size=limit)
-        for ap in api_prods:
-            nome = ap.get("nome", "")
-            if any(w.lower() in nome.lower() for w in q_str.split() if len(w) >= 3) and not any(it.title == nome for it in items):
-                items.append(AutocompleteItem(
-                    id=ap.get("id"),
-                    title=nome,
-                    category=ap.get("categoria", "Geral"),
-                    price=float(ap.get("preco_base", 100.0)),
-                    platform="api_vendas",
-                    is_live_suggestion=True
-                ))
-                if len(items) >= limit:
-                    break
-
-    # Se ainda estiver vazio, gerar sugestão baseada no termo de busca
-    if not items:
-        cat_sug = "Moda e acessórios" if any(w in q_str.lower() for w in ["camisa", "tenis", "vestido", "calca", "roupa"]) else "Eletrônicos"
-        items.append(AutocompleteItem(
-            id=None,
-            title=q_str.title(),
-            category=cat_sug,
-            price=199.90,
-            platform="api_vendas",
-            is_live_suggestion=True
-        ))
-
-    return items
 
 
 @router.get("/{product_id}", response_model=ProductDetailResponse, summary="Obter detalhes de um produto específico")
@@ -356,68 +375,23 @@ class DiscoverLiveResponse(BaseModel):
     message: str
 
 
-@router.post("/discover-live", response_model=DiscoverLiveResponse, summary="Buscar produtos na API de Vendas")
+@router.post("/discover-live", response_model=DiscoverLiveResponse, summary="Buscar produtos no catálogo oficial")
 def discover_live_products(
     request: DiscoverLiveRequest,
     db: Session = Depends(get_db)
 ):
-    """Localiza produtos por termo ou categoria no catálogo oficial da API de Vendas."""
+    """Localiza produtos por termo ou caracteres similares no catálogo oficial."""
     query_str = request.query.strip()
     if not query_str:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Informe um termo de busca.")
 
-    matched_prods = db.query(Product).filter(
-        Product.is_active.is_(True),
-        (Product.title.ilike(f"%{query_str}%")) | (Product.category.ilike(f"%{query_str}%"))
-    ).limit(request.limit).all()
+    matched_prods = search_catalog_products(query_str, db, limit=request.limit)
 
     if not matched_prods:
-        # Tentar busca por palavras-chave
-        for word in query_str.split():
-            if len(word) >= 3:
-                matched_prods = db.query(Product).filter(
-                    Product.is_active.is_(True),
-                    Product.title.ilike(f"%{word}%")
-                ).limit(request.limit).all()
-                if matched_prods:
-                    break
-
-    if not matched_prods:
-        # Se não tiver local, busca na API de vendas e sincroniza
-        vendas_client.sync_to_trendecommerce(db, limit_products=request.limit)
-        matched_prods = db.query(Product).filter(
-            Product.is_active.is_(True),
-            (Product.title.ilike(f"%{query_str}%")) | (Product.category.ilike(f"%{query_str}%"))
-        ).limit(request.limit).all()
-
-    if not matched_prods:
-        # Criar produto descoberto sob demanda com histórico de vendas
-        cat_sug = "Informática" if any(w in query_str.lower() for w in ["monitor", "teclado", "mouse", "gamer"]) else "Eletrônicos"
-        new_prod = Product(
-            title=query_str.title(),
-            category=cat_sug,
-            price=899.00,
-            platform="api_vendas",
-            is_active=True
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Produto '{query_str}' não encontrado no catálogo."
         )
-        db.add(new_prod)
-        db.flush()
-        
-        # Gerar histórico mínimo de 30 dias para a IA
-        import numpy as np
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        for d in range(30):
-            sale = SalesHistory(
-                product_id=new_prod.id,
-                date=today - timedelta(days=30 - d),
-                quantity_sold=int(np.random.randint(10, 30)),
-                price_at_date=899.00,
-                available_quantity=50,
-                platform="api_vendas"
-            )
-            db.add(sale)
-        db.commit()
-        matched_prods = [new_prod]
 
     items = []
     for prod in matched_prods:
@@ -450,7 +424,7 @@ def discover_live_products(
         query=query_str,
         total_found=len(items),
         products=items,
-        message=f"{len(items)} produto(s) localizados na base de dados com sucesso!"
+        message=f"{len(items)} produto(s) encontrado(s) no catálogo."
     )
 
 

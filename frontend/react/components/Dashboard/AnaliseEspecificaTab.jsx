@@ -115,19 +115,20 @@ function AnaliseEspecificaTab({ products = [], showToast }) {
             return;
         }
 
-        // 1. Filtro instantâneo nos produtos locais para exibição imediata
-        const rawTokens = val.toLowerCase().trim().split(/\s+/).filter((t) => t.length >= 2);
+        // 1. Filtro instantâneo nos produtos carregados para exibição imediata
+        const queryLower = val.toLowerCase().trim();
+        const rawTokens = queryLower.split(/\s+/).filter((t) => t.length >= 2);
         const scoredMatches = (products || []).map((p) => {
-            const titleLower = p.title.toLowerCase();
+            const titleLower = (p.title || '').toLowerCase();
             const catLower = (p.category || '').toLowerCase();
             let score = 0;
 
-            if (titleLower.includes(val.toLowerCase().trim())) {
-                score += 10;
+            if (titleLower.includes(queryLower)) {
+                score += 15;
             }
 
             rawTokens.forEach((token) => {
-                if (titleLower.includes(token)) score += 3;
+                if (titleLower.includes(token)) score += 4;
                 if (catLower.includes(token)) score += 1;
             });
 
@@ -136,18 +137,16 @@ function AnaliseEspecificaTab({ products = [], showToast }) {
           .sort((a, b) => b.score - a.score)
           .slice(0, 8);
 
-        if (scoredMatches.length > 0) {
-            setSearchResults(scoredMatches);
-            setShowDropdown(true);
-        }
+        setSearchResults(scoredMatches);
+        setShowDropdown(true);
 
-        // 2. Consulta de Autocompletar e Modelos em Tempo Real (Amazon & Google APIs)
+        // 2. Consulta de Autocompletar no catálogo oficial (recomendações com caracteres parecidos)
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = setTimeout(async () => {
             try {
                 if (window.apiService?.products?.autocomplete) {
                     const sugs = await window.apiService.products.autocomplete(val.trim(), 8);
-                    if (sugs && Array.isArray(sugs) && sugs.length > 0) {
+                    if (sugs && Array.isArray(sugs)) {
                         setSearchResults(sugs);
                         setShowDropdown(true);
                     }
@@ -163,12 +162,10 @@ function AnaliseEspecificaTab({ products = [], showToast }) {
         setSearchQuery(prod.title);
 
         if (prod.id) {
-            // Produto já existente no banco de dados
             setSelectedProduct(prod);
             selectedProductRef.current = prod;
             runForecast(prod.id, horizonDays);
         } else {
-            // Modelo ou variação sugerida em tempo real: importa e prevê na hora!
             handleLiveDiscovery(prod.title);
         }
     };
@@ -178,7 +175,6 @@ function AnaliseEspecificaTab({ products = [], showToast }) {
         if (!q || !q.trim()) return;
 
         setDiscovering(true);
-        showToast(`Buscando "${q.trim()}" em tempo real na Amazon e Mercado Livre...`, 'info', 4000);
         try {
             const res = await window.apiService.products.discoverLive(q.trim(), 5);
             if (res && res.products && res.products.length > 0) {
@@ -186,17 +182,17 @@ function AnaliseEspecificaTab({ products = [], showToast }) {
                 setSelectedProduct(first);
                 setSearchQuery(first.title);
                 setShowDropdown(false);
-                showToast(`${res.total_found} produto(s) sincronizados com sucesso!`, 'success', 5000);
+                showToast(`Produto selecionado: ${first.title}`, 'success', 3500);
                 runForecast(first.id, horizonDays);
             } else {
-                showToast('Produto não localizado ou sem comercialização ativa no Mercado Livre / Amazon.', 'warning', 6000);
+                showToast(`Produto não encontrado no catálogo.`, 'warning', 5000);
             }
         } catch (err) {
             const msg = err.message || '';
-            if (msg.includes('não localizado') || msg.includes('restritos') || msg.includes('404')) {
-                showToast('⚠️ Produto não localizado ou sem comercialização ativa no Mercado Livre / Amazon (itens proibidos ou sem catálogo oficial).', 'warning', 7000);
+            if (msg.includes('não encontrado') || msg.includes('404')) {
+                showToast(`Produto não encontrado no catálogo.`, 'warning', 5000);
             } else {
-                showToast('Erro na busca em tempo real: ' + msg, 'error');
+                showToast('Erro ao consultar catálogo: ' + msg, 'error');
             }
         } finally {
             setDiscovering(false);
@@ -493,7 +489,7 @@ function AnaliseEspecificaTab({ products = [], showToast }) {
                     <input
                         type="text"
                         className="specific-search-input"
-                        placeholder="Digite qualquer produto do mercado (ex: RTX 4070, Air Fryer, Kindle, Tênis Nike)..."
+                        placeholder="Pesquisar produto no catálogo (ex: Notebook Dell, Creatina, Whey, Smartphone)..."
                         value={searchQuery}
                         onChange={(e) => handleSearchInput(e.target.value)}
                         onKeyDown={(e) => {
@@ -506,7 +502,7 @@ function AnaliseEspecificaTab({ products = [], showToast }) {
                         type="button"
                         className="btn-live-search"
                         onClick={() => handleLiveDiscovery(searchQuery)}
-                        title="Buscar produto em tempo real na Amazon & Mercado Livre"
+                        title="Buscar produto no catálogo"
                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '0 8px', display: 'flex', alignItems: 'center' }}
                     >
                         <svg className="search-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" strokeWidth="2" style={{ width: '20px', height: '20px' }}>
@@ -518,37 +514,31 @@ function AnaliseEspecificaTab({ products = [], showToast }) {
 
                 {showDropdown && (
                     <div className="search-results-dropdown">
-                        {searchResults.map((prod) => (
+                        {searchResults.length > 0 ? (
+                            searchResults.map((prod) => (
+                                <div
+                                    key={prod.id ? `db-${prod.id}` : `sug-${prod.title}`}
+                                    className="search-item"
+                                    onClick={() => handleSelectProduct(prod)}
+                                >
+                                    <span className="search-item-title">{prod.title}</span>
+                                    <span className="search-item-price">
+                                        R$ {Number(prod.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                            ))
+                        ) : (
                             <div
-                                key={prod.id ? `db-${prod.id}` : `sug-${prod.title}`}
-                                className="search-item"
-                                onClick={() => handleSelectProduct(prod)}
-                            >
-                                <span className="search-item-title">{prod.title}</span>
-                                <span className="search-item-price">
-                                    R$ {Number(prod.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                </span>
-                            </div>
-                        ))}
-                        {searchQuery.trim().length > 0 && (
-                            <div
-                                className="search-item-live-sync"
-                                onClick={() => handleLiveDiscovery(searchQuery)}
+                                className="search-item search-item-empty"
                                 style={{
                                     padding: '12px 16px',
-                                    borderTop: '1px solid rgba(0, 212, 255, 0.25)',
-                                    background: 'linear-gradient(90deg, rgba(0, 212, 255, 0.12), rgba(0, 114, 255, 0.08))',
-                                    color: '#00f0ff',
-                                    fontWeight: 700,
-                                    fontSize: '13px',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px'
+                                    color: '#8da2bd',
+                                    fontStyle: 'italic',
+                                    cursor: 'default',
+                                    userSelect: 'none'
                                 }}
                             >
-                                <span>⚡</span>
-                                <span>{discovering ? 'Buscando nas APIs...' : `Buscar "${searchQuery}" em tempo real na Amazon & Mercado Livre`}</span>
+                                Produto não encontrado no catálogo.
                             </div>
                         )}
                     </div>
