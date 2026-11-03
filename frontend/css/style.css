@@ -553,52 +553,6 @@ body {
     background: linear-gradient(90deg, transparent, rgba(0, 180, 216, 0.35), transparent);
 }
 
-.btn-google-auth {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    width: 100%;
-    max-width: 350px;
-    min-height: 44px;
-    padding: 0 18px;
-    background: rgba(9, 32, 60, 0.65);
-    border: 1px solid rgba(0, 180, 216, 0.35);
-    border-radius: var(--radius-pill);
-    color: #ffffff;
-    font-family: var(--font-main);
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    user-select: none;
-    align-self: center;
-    text-decoration: none;
-}
-
-.btn-google-auth:hover:not(:disabled) {
-    background: rgba(13, 44, 82, 0.9);
-    border-color: #00d4ff;
-    box-shadow: 0 6px 18px rgba(0, 180, 216, 0.35), 0 0 12px rgba(0, 212, 255, 0.2);
-    transform: translateY(-1px);
-}
-
-.btn-google-auth:active:not(:disabled) {
-    transform: scale(0.98);
-}
-
-.btn-google-auth:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.btn-google-auth .google-svg-icon {
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
-}
-
 .btn-spinner {
     width: 18px;
     height: 18px;
