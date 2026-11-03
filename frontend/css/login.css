@@ -99,8 +99,8 @@ body.auth-mode textarea {
     justify-content: center;
     background: linear-gradient(90deg, #020B14, #071B2E);
     width: min(741px, 94vw);
-    min-height: min(520px, 72vh);
-    max-height: min(650px, 85vh);
+    min-height: min(540px, 75vh);
+    max-height: min(680px, 88vh);
     border-radius: clamp(36px, 5vw, 77px);
     overflow: hidden;
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
@@ -186,12 +186,12 @@ body.auth-mode textarea {
 
 .button-right {
     align-self: center;
-    margin-top: clamp(20px, 3vh, 32px);
-    margin-bottom: clamp(4px, 1vh, 10px);
+    margin-top: clamp(32px, 4.6vh, 50px);
+    margin-bottom: clamp(6px, 1.2vh, 14px);
 }
 
 .login-button {
-    margin-top: clamp(16px, 2.5vh, 26px);
+    margin-top: clamp(22px, 3.2vh, 36px);
 }
 
 /* Divisor de Autenticação */
@@ -288,14 +288,20 @@ body.auth-mode textarea {
     gap: clamp(6px, 1.3vh, 12px);
 }
 
-.login-right h1 {
-    margin: 0;
-    line-height: 1.2;
-    font-size: clamp(13px, 1.6vh, 16px);
+.login-right h1,
+.login-form-content h1 {
+    margin: 0 0 6px 0;
+    line-height: 1.25;
+    font-size: clamp(17px, 2.2vh, 22px);
     font-weight: 700;
     color: #ffffff;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.7px;
     text-transform: uppercase;
+}
+
+.login-form-content h1:not(:first-child),
+.login-right h1:not(:first-child) {
+    margin-top: clamp(10px, 1.6vh, 16px);
 }
 
 /* Campos de Entrada */
@@ -546,8 +552,13 @@ body.auth-mode textarea {
         gap: 10px;
     }
 
-    .login-right h1 {
-        font-size: 14px;
+    .login-right h1,
+    .login-form-content h1 {
+        font-size: 16px;
+    }
+
+    .button-right {
+        margin-top: 26px;
     }
 
     .login-input,
@@ -611,8 +622,9 @@ body.auth-mode textarea {
         gap: 8px;
     }
 
-    .login-right h1 {
-        font-size: 13px;
+    .login-right h1,
+    .login-form-content h1 {
+        font-size: 15px;
     }
 
     .login-title {
@@ -638,7 +650,7 @@ body.auth-mode textarea {
         min-height: 42px;
         font-size: 16px;
         padding: 0 24px;
-        margin-top: 18px;
+        margin-top: 26px;
     }
 
     .login-span {
