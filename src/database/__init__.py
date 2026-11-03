@@ -1,20 +1,17 @@
 """Módulo de banco de dados do TrendCommerce AI.
 
-Utiliza PostgreSQL para armazenar dados coletados
-e manter histórico para treinamento do modelo.
+Gerencia a conexão e os modelos de Usuários, Produtos e Histórico de Vendas.
 """
 
 from .connection import get_engine, get_session, DatabaseManager
-from .models import Base, Product, SalesHistory, SearchTrend, CollectionLog, PredictionLog
+from .models import Base, User, Product, SalesHistory
 
 __all__ = [
     "get_engine",
     "get_session",
     "DatabaseManager",
     "Base",
+    "User",
     "Product",
     "SalesHistory",
-    "SearchTrend",
-    "CollectionLog",
-    "PredictionLog",
 ]

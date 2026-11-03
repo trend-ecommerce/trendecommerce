@@ -37,7 +37,7 @@ htmlcov/
 # Databases
 *.db
 *.sqlite3
-!data/trendcommerce_dev.db
+*.db.bak
 !data/initial_seed.json
 
 # Models
