@@ -144,17 +144,7 @@ class LiveTracker:
                         )
                         session.add(sale)
             
-            # Log de coleta
-            # log = CollectionLog(
-                collector_name="live_tracker_meli",
-                endpoint="/sites/MLB/search",
-                started_at=datetime.utcnow(),
-                finished_at=datetime.utcnow(),
-                records_collected=len(saved_products),
-                success=True,
-            )
-            # session.add(log)
-            
+            pass
         logger.info(f"Sincronizados {len(saved_products)} produtos com histórico de vendas.")
         return saved_products
 
