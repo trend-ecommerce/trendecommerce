@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
-from src.api.routers import auth_router, products_router, forecast_router, trends_router, opportunity_router
+from src.api.routers import auth_router, products_router, forecast_router, opportunity_router
 from src.api.dependencies import get_db_instance, get_password_hash
 from src.database.models import Base, User
 
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
             from src.database.seed_loader import seed_database_if_empty
             seed_database_if_empty(session)
         except Exception as err:
-            print(f"[TrendCommerce AI] Erro ao carregar seed inicial: {err}")
+            print(f"[TrendCommerce] Erro ao carregar seed inicial: {err}")
 
         # 2. Garantir usuário administrador padrão
         try:
@@ -38,23 +38,23 @@ async def lifespan(app: FastAPI):
                 )
                 session.add(admin_user)
                 session.commit()
-                print("[TrendCommerce AI] Usuário administrador padrão criado com sucesso.")
+                print("[TrendCommerce] Usuário administrador padrão criado com sucesso.")
         except Exception as err:
-            print(f"[TrendCommerce AI] Erro ao criar admin padrão: {err}")
+            print(f"[TrendCommerce] Erro ao criar admin padrão: {err}")
 
-        # 3. Pré-aquecer motor ML em background no startup para respostas instantâneas (<10ms)
+        # 3. Pré-aquecer motor ML em background no startup para respostas instantâneas
         try:
             from src.api.dependencies import get_ml_forecaster
             get_ml_forecaster(session)
-            print("[TrendCommerce AI] Motor preditivo XGBoost aquecido e pronto na memória.")
+            print("[TrendCommerce] Motor preditivo XGBoost aquecido e pronto na memória.")
         except Exception as err:
-            print(f"[TrendCommerce AI] Erro no warmup ML: {err}")
+            print(f"[TrendCommerce] Erro no warmup ML: {err}")
     yield
 
 
 app = FastAPI(
-    title="TrendCommerce AI - API REST",
-    description="API de Integração Fullstack para Previsão de Demanda, Tendências de E-commerce e Autenticação com Inteligência Artificial (XGBoost).",
+    title="TrendCommerce API",
+    description="API REST de Gestão de Catálogo, Histórico de Vendas e Previsão de Demanda com Inteligência Artificial (XGBoost).",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -97,7 +97,6 @@ app.include_router(auth_router, prefix=API_PREFIX)
 app.include_router(auth_router, prefix="/api")
 app.include_router(products_router, prefix=API_PREFIX)
 app.include_router(forecast_router, prefix=API_PREFIX)
-app.include_router(trends_router, prefix=API_PREFIX)
 app.include_router(opportunity_router, prefix=API_PREFIX)
 
 
@@ -113,9 +112,9 @@ if frontend_dir.exists():
 def root():
     """Redireciona para o frontend ou retorna status da API."""
     if frontend_dir.exists():
-        return RedirectResponse(url="/app/#/ia-preditiva")
+        return RedirectResponse(url="/app/ia-preditiva.html")
     return {
-        "system": "TrendCommerce AI API",
+        "system": "TrendCommerce API",
         "status": "online",
         "version": "1.0.0",
         "docs": "/docs"
@@ -133,7 +132,7 @@ def health_check():
 
 @app.api_route("/api/v1/admin/reseed", methods=["GET", "POST"], tags=["Admin"], summary="Recarregar catálogo e histórico inicial")
 def reseed_database():
-    """Injeta ou sincroniza o catálogo completo de 89 produtos e 8.731 históricos diários."""
+    """Injeta ou sincroniza o catálogo e históricos diários."""
     from src.database.seed_loader import seed_database_if_empty
     db_manager = get_db_instance()
     with db_manager.session() as session:

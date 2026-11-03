@@ -1,6 +1,6 @@
 /**
- * TrendCommerce AI - API Client
- * Centraliza requisições HTTP para os endpoints FastAPI (/api/v1).
+ * TrendCommerce AI - Vanilla API Service
+ * Centraliza requisições HTTP para a API REST FastAPI (/api/v1).
  */
 
 const API_BASE_URL = (() => {
@@ -22,7 +22,7 @@ const API_BASE_URL = (() => {
     return `${window.location.origin}/api/v1`;
 })();
 
-class ApiClient {
+class ApiService {
     constructor() {
         this.tokenKey = 'trendecommerce_token';
         this.userKey = 'trendecommerce_user';
@@ -71,11 +71,8 @@ class ApiClient {
                 headers
             });
 
-            if (response.status === 401) {
-                // Token expirado ou inválido
-                if (!endpoint.includes('/auth/login')) {
-                    this.clearSession();
-                }
+            if (response.status === 401 && !endpoint.includes('/auth/login')) {
+                this.clearSession();
             }
 
             const data = await response.json().catch(() => ({}));
@@ -104,7 +101,7 @@ class ApiClient {
     }
 
     // ==========================================
-    // Módulo de Autenticação
+    // Autenticação
     // ==========================================
     auth = {
         login: async (email, password) => {
@@ -181,7 +178,7 @@ class ApiClient {
     };
 
     // ==========================================
-    // Módulo de Produtos
+    // Produtos & Histórico
     // ==========================================
     products = {
         list: async (params = {}) => {
@@ -220,7 +217,7 @@ class ApiClient {
     };
 
     // ==========================================
-    // Módulo de Previsão (Machine Learning / XGBoost)
+    // Previsão de Demanda & IA (XGBoost)
     // ==========================================
     forecast = {
         predict: async (productId, horizonDays = 7) => {
@@ -251,7 +248,7 @@ class ApiClient {
     };
 
     // ==========================================
-    // Módulo de Tendências
+    // Tendências
     // ==========================================
     trends = {
         search: async (keyword = '') => {
@@ -260,5 +257,5 @@ class ApiClient {
     };
 }
 
-// Instância global para uso em todo o frontend
-window.api = new ApiClient();
+window.apiService = new ApiService();
+window.api = window.apiService;

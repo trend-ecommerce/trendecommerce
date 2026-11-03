@@ -3,9 +3,9 @@ import unicodedata
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 
 from src.api.dependencies import get_db
 from src.database.models import Product, SalesHistory
@@ -27,7 +27,7 @@ def list_products(
     limit: int = Query(20, ge=1, le=100, description="Itens por página"),
     search: Optional[str] = Query(None, description="Filtro de busca por nome ou categoria"),
     category: Optional[str] = Query(None, description="Filtro de categoria"),
-    platform: Optional[str] = Query(None, description="Filtro de plataforma (api_vendas, proprio)"),
+    platform: Optional[str] = Query(None, description="Filtro de plataforma"),
     db: Session = Depends(get_db)
 ):
     """Retorna lista de produtos cadastrados com paginação e totalizadores de vendas."""
@@ -45,32 +45,25 @@ def list_products(
     if platform:
         query = query.filter(Product.platform == platform)
 
-    total = query.count()
-    offset = (page - 1) * limit
-    products = query.order_by(Product.id).offset(offset).limit(limit).all()
+    total_items = query.count()
+    total_pages = (total_items + limit - 1) // limit
 
-    # Agregar totais de venda por produto nos últimos 30 dias (vendas do mês)
-    product_ids = [p.id for p in products]
-    sales_map = {}
-    if product_ids:
-        latest_date = db.query(func.max(SalesHistory.date)).scalar()
-        sales_q = db.query(
-            SalesHistory.product_id,
-            func.sum(SalesHistory.quantity_sold).label("total_units"),
-            func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, 100.0)).label("total_rev")
-        ).filter(SalesHistory.product_id.in_(product_ids))
-
-        if latest_date:
-            sales_q = sales_q.filter(SalesHistory.date >= latest_date - timedelta(days=30))
-
-        sales_aggs = sales_q.group_by(SalesHistory.product_id).all()
-        for s_pid, s_units, s_rev in sales_aggs:
-            sales_map[s_pid] = (int(s_units or 0), float(s_rev or 0.0))
+    products = query.order_by(Product.id.asc())\
+                    .offset((page - 1) * limit)\
+                    .limit(limit)\
+                    .all()
 
     items = []
     for prod in products:
-        total_units, total_rev = sales_map.get(prod.id, (0, 0.0))
-        item = ProductResponse(
+        sales_agg = db.query(
+            func.sum(SalesHistory.quantity_sold).label("total_units"),
+            func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, prod.price or 0.0)).label("total_rev")
+        ).filter(SalesHistory.product_id == prod.id).first()
+
+        total_units = int(sales_agg.total_units or 0)
+        total_rev = float(sales_agg.total_rev or 0.0)
+
+        items.append(ProductResponse(
             id=prod.id,
             external_id=prod.external_id,
             platform=prod.platform,
@@ -85,33 +78,29 @@ def list_products(
             created_at=prod.created_at,
             total_sold_units=total_units,
             total_revenue=round(total_rev, 2)
-        )
-        items.append(item)
-
-    pages = (total + limit - 1) // limit if total > 0 else 1
+        ))
 
     return ProductListResponse(
-        total=total,
+        items=items,
+        total=total_items,
         page=page,
         limit=limit,
-        pages=pages,
-        items=items
+        pages=total_pages
     )
 
 
 @router.get("/categories", response_model=List[str], summary="Listar todas as categorias com produtos cadastrados")
 def get_categories(db: Session = Depends(get_db)):
     """Retorna a lista de categorias disponíveis no sistema e na API de Vendas."""
-    db_cats = [
-        c[0] for c in db.query(Product.category).filter(
-            Product.is_active.is_(True),
-            Product.category.isnot(None)
-        ).distinct().order_by(Product.category).all()
-        if c[0]
-    ]
-    if db_cats:
-        return db_cats
-    return vendas_client.get_categorias()
+    categories = db.query(Product.category).filter(
+        Product.category.isnot(None), 
+        Product.is_active.is_(True)
+    ).distinct().order_by(Product.category).all()
+    unique_cats = sorted(list({c[0] for c in categories if c[0]}))
+    if unique_cats:
+        return unique_cats
+    api_cats = vendas_client.get_categorias()
+    return api_cats if api_cats else ["Geral", "Eletrônicos", "Moda e acessórios", "Casa e decoração", "Esportes e fitness", "Beleza e cuidados pessoais"]
 
 
 @router.get("/api-status", summary="Verificar status de conexão com a API de Histórico de Vendas")
@@ -132,37 +121,37 @@ def get_top_sales(
 
     query = db.query(
         SalesHistory.product_id,
-        func.sum(SalesHistory.quantity_sold).label("total_units"),
-        func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, 100.0)).label("total_revenue")
-    )
+        Product.title,
+        Product.category,
+        Product.price,
+        func.sum(SalesHistory.quantity_sold).label("total_sold"),
+        func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, Product.price, 0.0)).label("total_revenue")
+    ).join(Product, Product.id == SalesHistory.product_id)\
+     .filter(Product.is_active.is_(True))
 
-    if latest_date and days:
-        min_date = latest_date - timedelta(days=days)
-        query = query.filter(SalesHistory.date >= min_date)
+    if latest_date and days > 0:
+        start_date = latest_date - timedelta(days=days)
+        query = query.filter(SalesHistory.date >= start_date)
 
-    sales_results = query.group_by(SalesHistory.product_id).order_by(desc("total_units")).all()
+    if category and category.strip().upper() not in ["GERAIS", "GERAL", "TODAS", "TODOS"]:
+        query = query.filter(Product.category == category.strip())
+
+    results = query.group_by(SalesHistory.product_id, Product.title, Product.category, Product.price)\
+                   .order_by(desc("total_sold"))\
+                   .limit(limit)\
+                   .all()
 
     items = []
-    rank = 1
-    for p_id, units, rev in sales_results:
-        prod = db.query(Product).filter(Product.id == p_id).first()
-        if not prod or not prod.is_active:
-            continue
-        if category and prod.category != category:
-            continue
-
+    for rank, r in enumerate(results, start=1):
         items.append(TopProductItem(
-            rank=rank,
-            id=prod.id,
-            title=prod.title,
-            category=prod.category or "Geral",
-            price=prod.price or 0.0,
-            quantity_sold=int(units or 0),
-            revenue=round(float(rev or 0.0), 2)
+            id=r[0],
+            title=r[1],
+            category=r[2] or "Geral",
+            price=float(r[3] or 0.0),
+            quantity_sold=int(r[4] or 0),
+            revenue=round(float(r[5] or 0.0), 2),
+            rank=rank
         ))
-        rank += 1
-        if len(items) >= limit:
-            break
 
     return items
 
@@ -457,4 +446,92 @@ def sync_vendas_api_endpoint(
         total_sales=result["total_sales"],
         sample_products=samples,
         message=f"{result['total_products']} produtos e {result['total_sales']:,} registros de vendas sincronizados com sucesso!"
+    )
+
+
+class CreateProductRequest(BaseModel):
+    title: str = Field(..., min_length=2, max_length=500)
+    category: str = Field(..., min_length=2, max_length=255)
+    price: float = Field(..., gt=0)
+    platform: Optional[str] = "ecommerce"
+    currency: Optional[str] = "BRL"
+    condition: Optional[str] = "new"
+    url: Optional[str] = None
+
+
+@router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, summary="Cadastrar novo produto")
+def create_product(payload: CreateProductRequest, db: Session = Depends(get_db)):
+    """Cadastra um novo produto no catálogo interno."""
+    new_prod = Product(
+        external_id=f"INT_{int(datetime.utcnow().timestamp())}",
+        platform=payload.platform or "ecommerce",
+        title=payload.title,
+        category=payload.category,
+        price=payload.price,
+        currency=payload.currency or "BRL",
+        condition=payload.condition or "new",
+        url=payload.url,
+        is_active=True
+    )
+    db.add(new_prod)
+    db.commit()
+    db.refresh(new_prod)
+
+    return ProductResponse(
+        id=new_prod.id,
+        external_id=new_prod.external_id,
+        platform=new_prod.platform,
+        title=new_prod.title,
+        category=new_prod.category,
+        price=new_prod.price,
+        currency=new_prod.currency,
+        condition=new_prod.condition,
+        url=new_prod.url,
+        attributes=new_prod.attributes,
+        is_active=new_prod.is_active,
+        created_at=new_prod.created_at,
+        total_sold_units=0,
+        total_revenue=0.0
+    )
+
+
+class CreateSaleRequest(BaseModel):
+    date: Optional[datetime] = None
+    quantity_sold: int = Field(..., gt=0)
+    price_at_date: Optional[float] = None
+    available_quantity: Optional[int] = None
+
+
+@router.post("/{product_id}/sales", response_model=SalesHistoryResponse, status_code=status.HTTP_201_CREATED, summary="Registrar venda para um produto")
+def record_sale(product_id: int, payload: CreateSaleRequest, db: Session = Depends(get_db)):
+    """Registra uma venda no histórico de um produto."""
+    prod = db.query(Product).filter(Product.id == product_id).first()
+    if not prod:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produto não encontrado.")
+
+    sale_date = payload.date or datetime.utcnow()
+    unit_price = payload.price_at_date if payload.price_at_date is not None else (prod.price or 0.0)
+
+    sale = SalesHistory(
+        product_id=prod.id,
+        date=sale_date,
+        quantity_sold=payload.quantity_sold,
+        price_at_date=unit_price,
+        available_quantity=payload.available_quantity,
+        platform=prod.platform,
+        collected_at=datetime.utcnow()
+    )
+    db.add(sale)
+    db.commit()
+    db.refresh(sale)
+
+    return SalesHistoryResponse(
+        id=sale.id,
+        product_id=sale.product_id,
+        date=sale.date,
+        quantity_sold=sale.quantity_sold,
+        price_at_date=unit_price,
+        available_quantity=sale.available_quantity,
+        platform=sale.platform,
+        revenue=round(sale.quantity_sold * unit_price, 2)
     )

@@ -1,29 +1,30 @@
-"""Módulo de carregamento automático de sementes (Seed) de dados no startup."""
+"""Carregador de dados iniciais (Seed Data).
+
+Injeta o catálogo de produtos e o histórico de vendas a partir do
+arquivo data/initial_seed.json caso o banco de dados esteja vazio.
+"""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+
 from src.database.models import Product, SalesHistory
 
 
 def _parse_dt(val):
     if not val:
         return datetime.utcnow()
-    if isinstance(val, datetime):
-        return val
     try:
-        return datetime.fromisoformat(str(val))
+        return datetime.fromisoformat(val)
     except Exception:
         return datetime.utcnow()
 
 
 def seed_database_if_empty(session: Session):
-    """Carrega dados iniciais essenciais para produtos e histórico de vendas."""
+    """Sincroniza produtos e histórico do initial_seed.json se o banco estiver vazio."""
     seed_file = Path(__file__).parent.parent.parent / "data" / "initial_seed.json"
     if not seed_file.exists():
-        print(f"[SeedLoader] Arquivo de seed nao encontrado: {seed_file}")
         return
 
     try:
@@ -33,42 +34,36 @@ def seed_database_if_empty(session: Session):
         products_data = data.get("products", [])
         sales_data = data.get("sales_history", [])
 
-        # Inserir ou atualizar produtos
-        for p_data in products_data:
-            p_id = p_data.get("id")
-            existing = session.query(Product).filter(Product.id == p_id).first()
-            if existing:
-                existing.price = float(p_data.get("price", existing.price))
-                existing.title = p_data.get("title", existing.title)
-                existing.category = p_data.get("category", existing.category)
-            else:
+        # 1. Inserir ou atualizar produtos caso a tabela esteja vazia
+        products_count = session.query(Product).count()
+        if products_count == 0:
+            for p_data in products_data:
                 product = Product(
-                    id=p_id,
-                    external_id=p_data.get("external_id") or f"PROD_{p_id}",
+                    id=p_data.get("id"),
+                    external_id=p_data.get("external_id") or f"PROD_{p_data.get('id')}",
                     platform=p_data.get("platform") or "proprio",
                     title=p_data.get("title") or "Produto",
                     category=p_data.get("category") or "Geral",
                     price=float(p_data.get("price") or 100.0),
                     currency=p_data.get("currency") or "BRL",
                     condition=p_data.get("condition") or "new",
-                    url=p_data.get("url") or "",
+                    url=p_data.get("url"),
                     attributes=p_data.get("attributes"),
-                    is_active=bool(p_data.get("is_active", True)),
                     created_at=_parse_dt(p_data.get("created_at")),
-                    updated_at=_parse_dt(p_data.get("updated_at"))
+                    updated_at=_parse_dt(p_data.get("updated_at")),
+                    is_active=bool(p_data.get("is_active", True))
                 )
                 session.add(product)
+            session.flush()
 
-        session.flush()
-
-        # Inserir histórico de vendas caso vazio
+        # 2. Sincronizar vendas se a tabela de histórico estiver vazia
         sales_count = session.query(SalesHistory).count()
-        today_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        seed_dates = [_parse_dt(s.get("date")) for s in sales_data if s.get("date")]
-        max_seed_date = max(seed_dates) if seed_dates else today_midnight
-        seed_shift = today_midnight - max_seed_date
-
         if sales_count == 0 and sales_data:
+            today_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            seed_dates = [_parse_dt(s.get("date")) for s in sales_data if s.get("date")]
+            max_seed_date = max(seed_dates) if seed_dates else today_midnight
+            seed_shift = today_midnight - max_seed_date
+
             for s_data in sales_data:
                 shifted_date = _parse_dt(s_data.get("date")) + seed_shift
                 sales_entry = SalesHistory(
@@ -84,7 +79,6 @@ def seed_database_if_empty(session: Session):
                 session.add(sales_entry)
 
         session.commit()
-        print(f"[SeedLoader] Banco inicializado com {len(products_data)} produtos.")
     except Exception as e:
         session.rollback()
         print(f"[SeedLoader] Erro ao sincronizar seed: {e}")

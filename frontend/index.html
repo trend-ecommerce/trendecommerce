@@ -3,9 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrendCommerce AI - Sistema Preditivo de Vendas e Inteligência de Dados (React)</title>
+    <title>TrendCommerce AI - Sistema Preditivo de Vendas e Inteligência de Dados</title>
     <link rel="icon" type="image/png" href="assets/logo.png">
     
+    <script>
+        // Se já autenticado, redireciona diretamente para o dashboard
+        if (localStorage.getItem('trendecommerce_token')) {
+            window.location.replace('ia-preditiva.html');
+        }
+    </script>
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,46 +24,79 @@
     <!-- CSS Stylesheets -->
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/login.css">
-
-    <!-- React 18 & ReactDOM & Babel Standalone -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Google Identity Services (GIS) SDK -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body class="auth-mode">
-    <!-- React Root Mount Container -->
-    <div id="root"></div>
+    <div id="appRoot" class="app-root auth-view">
+        <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-    <!-- API Client Service -->
-    <script src="react/services/api.js"></script>
+        <div class="auth-root-wrapper">
+            <div class="logo logo-header">
+                <img src="assets/logo.png" alt="TrendCommerce Logo" class="logo-img">
+            </div>
 
-    <!-- React Components -->
-    <script type="text/babel" src="react/components/BackgroundEffects.jsx"></script>
-    <script type="text/babel" src="react/components/Header.jsx"></script>
-    <script type="text/babel" src="react/components/Toast.jsx"></script>
+            <div class="login-pai">
+                <div class="login-container">
+                    <!-- Painel Esquerdo -->
+                    <div class="login-left">
+                        <h1>BEM-VINDO<br>DE VOLTA!</h1>
+                        <a href="cadastro.html" class="login-button" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none;">
+                            CADASTRAR
+                        </a>
+                    </div>
 
-    <!-- Auth Components -->
-    <script type="text/babel" src="react/components/Auth/GoogleAuthModal.jsx"></script>
-    <script type="text/babel" src="react/components/Auth/LoginForm.jsx"></script>
-    <script type="text/babel" src="react/components/Auth/RegisterForm.jsx"></script>
-    <script type="text/babel" src="react/components/Auth/RecoveryStep1.jsx"></script>
-    <script type="text/babel" src="react/components/Auth/RecoveryStep2.jsx"></script>
-    <script type="text/babel" src="react/components/Auth/RecoveryStep3.jsx"></script>
-    <script type="text/babel" src="react/components/Auth/AuthContainer.jsx"></script>
+                    <!-- Painel Direito: Formulário de Login -->
+                    <div class="login-right">
+                        <form id="formLogin" class="login-form-content" noValidate>
+                            <h1>EMAIL:</h1>
+                            <input
+                                type="email"
+                                id="loginEmail"
+                                class="login-input"
+                                placeholder="Digite seu email..."
+                                required
+                                autocomplete="email"
+                            >
+                            <span id="loginEmailError" class="login-field-error"></span>
 
-    <!-- Dashboard Components -->
-    <script type="text/babel" src="react/components/Dashboard/Sidebar.jsx"></script>
-    <script type="text/babel" src="react/components/Dashboard/TopHeader.jsx"></script>
-    <script type="text/babel" src="react/components/Dashboard/IaPreditivaTab.jsx"></script>
-    <script type="text/babel" src="react/components/Dashboard/RankingTab.jsx"></script>
-    <script type="text/babel" src="react/components/Dashboard/AnaliseEspecificaTab.jsx"></script>
-    <script type="text/babel" src="react/components/Dashboard/DashboardLayout.jsx"></script>
+                            <h1>SENHA:</h1>
+                            <div class="password-container">
+                                <input
+                                    type="password"
+                                    id="loginPassword"
+                                    class="login-input"
+                                    placeholder="Digite sua senha..."
+                                    required
+                                    autocomplete="current-password"
+                                >
+                                <button type="button" id="toggleSenha" aria-label="Mostrar ou ocultar senha">
+                                    <i class="ph ph-eye"></i>
+                                </button>
+                            </div>
+                            <span id="loginPasswordError" class="login-field-error"></span>
 
-    <!-- App Root & Index -->
-    <script type="text/babel" src="react/App.jsx"></script>
-    <script type="text/babel" src="react/index.jsx"></script>
+                            <button type="submit" id="btnLoginSubmit" class="button-right">
+                                ENTRAR
+                            </button>
+
+                            <div id="coldStartNotice" style="display: none; margin-top: 12px; padding: 8px 12px; background: rgba(0, 240, 255, 0.08); border: 1px solid rgba(0, 240, 255, 0.25); border-radius: 8px; color: #00f0ff; font-size: 11px; line-height: 1.4; text-align: center;">
+                                <i class="ph ph-lightning" style="margin-right: 4px;"></i>
+                                Conectando ao servidor em nuvem... Isso pode levar alguns instantes na primeira inicialização.
+                            </div>
+
+                            <a href="recuperar-senha.html" class="login-span" style="text-decoration: none;">
+                                Esqueceu sua senha?<br>Clique aqui.
+                            </a>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/toast.js"></script>
+    <script src="js/auth.js"></script>
 </body>
 </html>

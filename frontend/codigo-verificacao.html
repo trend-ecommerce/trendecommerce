@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrendCommerce AI - Código de Verificação</title>
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- CSS Stylesheets -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/login.css">
+</head>
+<body class="auth-mode">
+    <div id="appRoot" class="app-root auth-view">
+        <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+        <div class="auth-root-wrapper">
+            <div class="logo logo-header">
+                <img src="assets/logo.png" alt="TrendCommerce Logo" class="logo-img">
+            </div>
+
+            <div class="login-pai">
+                <div class="login-container">
+                    <!-- Painel Esquerdo -->
+                    <div class="login-left">
+                        <h1>RECUPERE<br>SUA SENHA</h1>
+                        <a href="login.html" class="login-button" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none;">
+                            ENTRAR
+                        </a>
+                    </div>
+
+                    <!-- Painel Direito: Inserir Código OTP -->
+                    <div class="login-right">
+                        <form id="formRecoveryStep2" class="login-form-content" noValidate>
+                            <h1 class="login-title">DIGITE SEU CÓDIGO:</h1>
+
+                            <div class="codigo-container">
+                                <input type="text" id="otp1" maxlength="1" inputmode="numeric" class="codigo-input" autocomplete="off">
+                                <input type="text" id="otp2" maxlength="1" inputmode="numeric" class="codigo-input" autocomplete="off">
+                                <input type="text" id="otp3" maxlength="1" inputmode="numeric" class="codigo-input" autocomplete="off">
+                                <input type="text" id="otp4" maxlength="1" inputmode="numeric" class="codigo-input" autocomplete="off">
+                            </div>
+
+                            <span id="recoveryStep2Error" class="login-field-error center"></span>
+
+                            <div class="codigo-resend">
+                                <span>Não recebeu o código? </span>
+                                <button type="button" id="btnRecoveryResend">
+                                    Reenviar código
+                                </button>
+                            </div>
+
+                            <button type="submit" id="btnRecoveryStep2Submit" class="button-right">
+                                ENVIAR
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/toast.js"></script>
+    <script src="js/auth.js"></script>
+</body>
+</html>

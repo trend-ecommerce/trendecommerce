@@ -1,34 +1,194 @@
 /**
- * TrendCommerce AI - Authentication Controller
- * Integra os formulários de Login, Cadastro e Recuperação com a API FastAPI.
+ * TrendCommerce AI - Multi-Page Auth Controller
+ * Gerencia formulários em login.html, cadastro.html, recuperar-senha.html,
+ * codigo-verificacao.html e nova-senha.html.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    const authState = {
-        currentView: 'login',
-        recoveryEmail: '',
-        generatedCode: '1234'
+    setupPasswordToggles();
+    setupLoginForm();
+    setupRegisterForm();
+    setupRecoveryStep1();
+    setupRecoveryStep2();
+    setupRecoveryStep3();
+});
+
+function setupPasswordToggles() {
+    document.querySelectorAll('.password-container').forEach(container => {
+        const input = container.querySelector('input');
+        const btn = container.querySelector('button');
+        if (input && btn) {
+            btn.onclick = (e) => {
+                e.preventDefault();
+                const isPass = input.type === 'password';
+                input.type = isPass ? 'text' : 'password';
+                const icon = btn.querySelector('i');
+                if (icon) {
+                    icon.className = isPass ? 'ph ph-eye-slash' : 'ph ph-eye';
+                }
+            };
+        }
+    });
+}
+
+// 1. Login
+function setupLoginForm() {
+    const form = document.getElementById('formLogin');
+    if (!form) return;
+
+    const emailInput = document.getElementById('loginEmail');
+    const passInput = document.getElementById('loginPassword');
+    const submitBtn = document.getElementById('btnLoginSubmit');
+    const emailErr = document.getElementById('loginEmailError');
+    const passErr = document.getElementById('loginPasswordError');
+    const coldStartNotice = document.getElementById('coldStartNotice');
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (emailErr) emailErr.textContent = '';
+        if (passErr) passErr.textContent = '';
+
+        const email = (emailInput?.value || '').trim();
+        const password = passInput?.value || '';
+
+        let hasError = false;
+        if (!email) {
+            if (emailErr) emailErr.textContent = 'Informe seu email.';
+            hasError = true;
+        }
+        if (!password) {
+            if (passErr) passErr.textContent = 'Informe sua senha.';
+            hasError = true;
+        }
+        if (hasError) return;
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        if (coldStartNotice) coldStartNotice.style.display = 'none';
+
+        const timer = setTimeout(() => {
+            if (coldStartNotice) coldStartNotice.style.display = 'block';
+        }, 3500);
+
+        try {
+            const data = await window.apiService.auth.login(email, password);
+            clearTimeout(timer);
+            window.showToast?.(`Bem-vindo, ${data.user.email}!`, 'success');
+            setTimeout(() => {
+                window.location.replace('ia-preditiva.html');
+            }, 600);
+        } catch (err) {
+            clearTimeout(timer);
+            if (coldStartNotice) coldStartNotice.style.display = 'none';
+            if (passErr) passErr.textContent = err.message || 'Email ou senha incorretos.';
+            window.showToast?.(err.message || 'Falha ao autenticar.', 'error');
+        } finally {
+            clearTimeout(timer);
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'ENTRAR';
+        }
     };
+}
 
-    // Referências do DOM
-    const authSection = document.getElementById('authSection');
-    const dashboardSection = document.getElementById('dashboardSection');
+// 2. Cadastro
+function setupRegisterForm() {
+    const form = document.getElementById('formRegister');
+    if (!form) return;
 
-    const formLogin = document.getElementById('formLogin');
-    const formRegister = document.getElementById('formRegister');
-    const formRecoveryStep1 = document.getElementById('formRecoveryStep1');
-    const formRecoveryStep2 = document.getElementById('formRecoveryStep2');
-    const formRecoveryStep3 = document.getElementById('formRecoveryStep3');
+    const emailInput = document.getElementById('registerEmail');
+    const passInput = document.getElementById('registerPassword');
+    const confirmInput = document.getElementById('registerConfirmPassword');
+    const submitBtn = document.getElementById('btnRegisterSubmit');
+    const emailErr = document.getElementById('registerEmailError');
+    const passErr = document.getElementById('registerPasswordError');
+    const confirmErr = document.getElementById('registerConfirmPasswordError');
 
-    const sideLogin = document.getElementById('side-login');
-    const sideRegister = document.getElementById('side-register');
-    const sideRecovery = document.getElementById('side-recovery');
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (emailErr) emailErr.textContent = '';
+        if (passErr) passErr.textContent = '';
+        if (confirmErr) confirmErr.textContent = '';
 
-    const btnGoToRegister = document.getElementById('btnGoToRegister');
-    const btnGoToLogin = document.getElementById('btnGoToLogin');
-    const linkForgotPassword = document.getElementById('linkForgotPassword');
-    const btnRecoveryBackToLogin = document.getElementById('btnRecoveryBackToLogin');
-    const btnResendCode = document.getElementById('btnResendCode');
+        const email = (emailInput?.value || '').trim();
+        const password = passInput?.value || '';
+        const confirm = confirmInput?.value || '';
+
+        let hasError = false;
+        if (!email) {
+            if (emailErr) emailErr.textContent = 'Informe um email válido.';
+            hasError = true;
+        }
+        if (password.length < 6) {
+            if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
+            hasError = true;
+        }
+        if (password !== confirm) {
+            if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
+            hasError = true;
+        }
+        if (hasError) return;
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+
+        try {
+            await window.apiService.auth.register(email, password);
+            window.showToast?.('Cadastro realizado com sucesso! Redirecionando para login...', 'success');
+            setTimeout(() => {
+                window.location.replace('login.html');
+            }, 1000);
+        } catch (err) {
+            if (emailErr) emailErr.textContent = err.message || 'Erro ao realizar cadastro.';
+            window.showToast?.(err.message || 'Erro ao cadastrar.', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'CADASTRAR';
+        }
+    };
+}
+
+// 3. Recuperação - Etapa 1
+function setupRecoveryStep1() {
+    const form = document.getElementById('formRecoveryStep1');
+    if (!form) return;
+
+    const emailInput = document.getElementById('recoveryEmailStep1');
+    const submitBtn = document.getElementById('btnRecoveryStep1Submit');
+    const errEl = document.getElementById('recoveryStep1Error');
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (errEl) errEl.textContent = '';
+        const email = (emailInput?.value || '').trim();
+        if (!email) {
+            if (errEl) errEl.textContent = 'Informe seu email cadastrado.';
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+
+        try {
+            const res = await window.apiService.auth.forgotPassword(email);
+            sessionStorage.setItem('recovery_email', email);
+            window.showToast?.(res.message, 'success', 5000);
+            setTimeout(() => {
+                window.location.href = 'codigo-verificacao.html';
+            }, 800);
+        } catch (err) {
+            if (errEl) errEl.textContent = err.message || 'Email não encontrado.';
+            window.showToast?.(err.message || 'Erro ao enviar código.', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'ENVIAR';
+        }
+    };
+}
+
+// 4. Recuperação - Etapa 2
+function setupRecoveryStep2() {
+    const form = document.getElementById('formRecoveryStep2');
+    if (!form) return;
 
     const otpInputs = [
         document.getElementById('otp1'),
@@ -36,376 +196,134 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('otp3'),
         document.getElementById('otp4')
     ];
+    const errEl = document.getElementById('recoveryStep2Error');
+    const resendBtn = document.getElementById('btnRecoveryResend');
+    const recoveryEmail = sessionStorage.getItem('recovery_email') || '';
 
-    // Verificar se usuário já está logado
-    const existingToken = window.api.getToken();
-    const existingUser = window.api.getUser();
-    if (existingToken && existingUser) {
-        showDashboard(existingUser);
-    }
+    if (otpInputs[0]) otpInputs[0].focus();
 
-    // ==========================================
-    // Alternância de Telas
-    // ==========================================
-    window.switchAuthView = function(targetView) {
-        authState.currentView = targetView;
-        document.querySelectorAll('.field-error').forEach(el => el.textContent = '');
-
-        [formLogin, formRegister, formRecoveryStep1, formRecoveryStep2, formRecoveryStep3].forEach(v => {
-            if (v) v.classList.remove('active');
-        });
-
-        [sideLogin, sideRegister, sideRecovery].forEach(s => {
-            if (s) s.classList.remove('active');
-        });
-
-        switch (targetView) {
-            case 'login':
-                if (formLogin) formLogin.classList.add('active');
-                if (sideLogin) sideLogin.classList.add('active');
-                break;
-            case 'register':
-                if (formRegister) formRegister.classList.add('active');
-                if (sideRegister) sideRegister.classList.add('active');
-                break;
-            case 'recovery-1':
-                if (formRecoveryStep1) formRecoveryStep1.classList.add('active');
-                if (sideRecovery) sideRecovery.classList.add('active');
-                break;
-            case 'recovery-2':
-                if (formRecoveryStep2) formRecoveryStep2.classList.add('active');
-                if (sideRecovery) sideRecovery.classList.add('active');
-                clearOtp();
-                setTimeout(() => otpInputs[0] && otpInputs[0].focus(), 100);
-                break;
-            case 'recovery-3':
-                if (formRecoveryStep3) formRecoveryStep3.classList.add('active');
-                if (sideRecovery) sideRecovery.classList.add('active');
-                break;
-        }
-    };
-
-    if (btnGoToRegister) btnGoToRegister.addEventListener('click', () => window.switchAuthView('register'));
-    if (btnGoToLogin) btnGoToLogin.addEventListener('click', () => window.switchAuthView('login'));
-    if (linkForgotPassword) linkForgotPassword.addEventListener('click', () => window.switchAuthView('recovery-1'));
-    if (btnRecoveryBackToLogin) btnRecoveryBackToLogin.addEventListener('click', () => window.switchAuthView('login'));
-
-    // ==========================================
-    // Mostrar/Ocultar Senha
-    // ==========================================
-    document.querySelectorAll('.btn-toggle-pass').forEach(button => {
-        button.addEventListener('click', () => {
-            const targetId = button.getAttribute('data-target');
-            const targetInput = document.getElementById(targetId);
-            const eyeIcon = button.querySelector('.eye-icon');
-            const eyeOffIcon = button.querySelector('.eye-off-icon');
-
-            if (targetInput.type === 'password') {
-                targetInput.type = 'text';
-                if (eyeIcon) eyeIcon.classList.add('hidden');
-                if (eyeOffIcon) eyeOffIcon.classList.remove('hidden');
-            } else {
-                targetInput.type = 'password';
-                if (eyeIcon) eyeIcon.classList.remove('hidden');
-                if (eyeOffIcon) eyeOffIcon.classList.add('hidden');
+    otpInputs.forEach((inp, idx) => {
+        if (!inp) return;
+        inp.oninput = (e) => {
+            const cleanVal = e.target.value.replace(/\D/g, '');
+            inp.value = cleanVal ? cleanVal[0] : '';
+            if (cleanVal && idx < 3 && otpInputs[idx + 1]) {
+                otpInputs[idx + 1].focus();
             }
-        });
-    });
+        };
 
-    // ==========================================
-    // OTP 4 Dígitos
-    // ==========================================
-    function clearOtp() {
-        otpInputs.forEach(input => { if (input) input.value = ''; });
-    }
-
-    otpInputs.forEach((input, index) => {
-        if (!input) return;
-        input.addEventListener('input', (e) => {
-            const val = e.target.value.replace(/\D/g, '');
-            e.target.value = val;
-            if (val && index < otpInputs.length - 1 && otpInputs[index + 1]) {
-                otpInputs[index + 1].focus();
+        inp.onkeydown = (e) => {
+            if (e.key === 'Backspace' && !inp.value && idx > 0 && otpInputs[idx - 1]) {
+                otpInputs[idx - 1].focus();
             }
-        });
+        };
 
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Backspace' && !input.value && index > 0 && otpInputs[index - 1]) {
-                otpInputs[index - 1].focus();
-            }
-        });
-
-        input.addEventListener('paste', (e) => {
+        inp.onpaste = (e) => {
             e.preventDefault();
-            const pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+            const pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 4);
             if (pasted) {
-                const chars = pasted.split('').slice(0, 4);
-                chars.forEach((char, i) => {
-                    if (otpInputs[i]) otpInputs[i].value = char;
-                });
-                const nextIndex = Math.min(chars.length, 3);
-                if (otpInputs[nextIndex]) otpInputs[nextIndex].focus();
+                for (let i = 0; i < pasted.length; i++) {
+                    if (otpInputs[i]) otpInputs[i].value = pasted[i];
+                }
+                const nextIdx = Math.min(pasted.length, 3);
+                if (otpInputs[nextIdx]) otpInputs[nextIdx].focus();
             }
-        });
+        };
     });
 
-    if (btnResendCode) {
-        btnResendCode.addEventListener('click', async () => {
-            if (!authState.recoveryEmail) {
-                window.showToast('Informe seu email primeiro.', 'error');
+    if (resendBtn) {
+        resendBtn.onclick = async () => {
+            if (!recoveryEmail) {
+                window.showToast?.('Email não identificado. Reinicie a recuperação.', 'error');
                 return;
             }
             try {
-                const res = await window.api.auth.forgotPassword(authState.recoveryEmail);
-                window.showToast(res.message, 'info', 6000);
-                clearOtp();
+                const res = await window.apiService.auth.forgotPassword(recoveryEmail);
+                window.showToast?.(res.message, 'info', 5000);
+                otpInputs.forEach(i => { if (i) i.value = ''; });
                 if (otpInputs[0]) otpInputs[0].focus();
             } catch (err) {
-                window.showToast(err.message, 'error');
+                window.showToast?.(err.message, 'error');
             }
-        });
+        };
     }
 
-    // ==========================================
-    // SUBMIT: LOGIN
-    // ==========================================
-    if (formLogin) {
-        formLogin.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('loginEmail').value.trim();
-            const password = document.getElementById('loginPassword').value;
-            const emailErr = document.getElementById('loginEmailError');
-            const passErr = document.getElementById('loginPasswordError');
-
-            emailErr.textContent = '';
-            passErr.textContent = '';
-
-            if (!email) {
-                emailErr.textContent = 'Informe seu email.';
-                return;
-            }
-            if (!password) {
-                passErr.textContent = 'Informe sua senha.';
-                return;
-            }
-
-            setLoading('btnSubmitLogin', true);
-
-            try {
-                const response = await window.api.auth.login(email, password);
-                window.showToast(`Bem-vindo, ${response.user.email}!`, 'success');
-                showDashboard(response.user);
-            } catch (err) {
-                passErr.textContent = err.message || 'Email ou senha incorretos.';
-                window.showToast(err.message || 'Falha ao autenticar.', 'error');
-            } finally {
-                setLoading('btnSubmitLogin', false);
-            }
-        });
-    }
-
-    // ==========================================
-    // SUBMIT: CADASTRO
-    // ==========================================
-    if (formRegister) {
-        formRegister.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('registerEmail').value.trim();
-            const password = document.getElementById('registerPassword').value;
-            const confirmPassword = document.getElementById('registerConfirmPassword').value;
-
-            const emailErr = document.getElementById('registerEmailError');
-            const passErr = document.getElementById('registerPasswordError');
-            const confirmErr = document.getElementById('registerConfirmPasswordError');
-
-            emailErr.textContent = '';
-            passErr.textContent = '';
-            confirmErr.textContent = '';
-
-            if (!email) {
-                emailErr.textContent = 'Informe um email.';
-                return;
-            }
-            if (password.length < 6) {
-                passErr.textContent = 'Mínimo de 6 caracteres.';
-                return;
-            }
-            if (password !== confirmPassword) {
-                confirmErr.textContent = 'As senhas não conferem.';
-                return;
-            }
-
-            setLoading('btnSubmitRegister', true);
-
-            try {
-                await window.api.auth.register(email, password);
-                window.showToast('Cadastro realizado com sucesso! Conecte-se.', 'success');
-                document.getElementById('loginEmail').value = email;
-                document.getElementById('loginPassword').value = '';
-                formRegister.reset();
-                window.switchAuthView('login');
-            } catch (err) {
-                emailErr.textContent = err.message || 'Erro ao cadastrar.';
-                window.showToast(err.message, 'error');
-            } finally {
-                setLoading('btnSubmitRegister', false);
-            }
-        });
-    }
-
-    // ==========================================
-    // SUBMIT: RECUPERAÇÃO ETAPA 1
-    // ==========================================
-    if (formRecoveryStep1) {
-        formRecoveryStep1.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('recoveryEmail').value.trim();
-            const emailErr = document.getElementById('recoveryEmailError');
-            emailErr.textContent = '';
-
-            if (!email) {
-                emailErr.textContent = 'Informe seu email.';
-                return;
-            }
-
-            setLoading('btnSubmitRecoveryEmail', true);
-
-            try {
-                const res = await window.api.auth.forgotPassword(email);
-                authState.recoveryEmail = email;
-                window.showToast(res.message, 'success', 7000);
-                window.switchAuthView('recovery-2');
-            } catch (err) {
-                emailErr.textContent = err.message || 'Email não encontrado.';
-                window.showToast(err.message, 'error');
-            } finally {
-                setLoading('btnSubmitRecoveryEmail', false);
-            }
-        });
-    }
-
-    // ==========================================
-    // SUBMIT: RECUPERAÇÃO ETAPA 2 (OTP)
-    // ==========================================
-    if (formRecoveryStep2) {
-        formRecoveryStep2.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const code = otpInputs.map(i => i.value).join('');
-            const otpErr = document.getElementById('otpError');
-            otpErr.textContent = '';
-
-            if (code.length < 4) {
-                otpErr.textContent = 'Preencha todos os 4 dígitos.';
-                return;
-            }
-
-            authState.enteredCode = code;
-            window.showToast('Código informado. Defina sua nova senha.', 'success');
-            window.switchAuthView('recovery-3');
-        });
-    }
-
-    // ==========================================
-    // SUBMIT: RECUPERAÇÃO ETAPA 3 (NOVA SENHA)
-    // ==========================================
-    if (formRecoveryStep3) {
-        formRecoveryStep3.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const newPassword = document.getElementById('newPassword').value;
-            const confirmNewPassword = document.getElementById('confirmNewPassword').value;
-            const newPassErr = document.getElementById('newPasswordError');
-            const confirmErr = document.getElementById('confirmNewPasswordError');
-
-            newPassErr.textContent = '';
-            confirmErr.textContent = '';
-
-            if (newPassword.length < 6) {
-                newPassErr.textContent = 'Mínimo de 6 caracteres.';
-                return;
-            }
-            if (newPassword !== confirmNewPassword) {
-                confirmErr.textContent = 'As senhas não coincidem.';
-                return;
-            }
-
-            setLoading('btnSubmitNewPassword', true);
-
-            try {
-                const res = await window.api.auth.resetPassword(
-                    authState.recoveryEmail,
-                    authState.enteredCode || '1234',
-                    newPassword
-                );
-                window.showToast(res.message, 'success');
-                document.getElementById('loginEmail').value = authState.recoveryEmail;
-                document.getElementById('loginPassword').value = '';
-                formRecoveryStep3.reset();
-                window.switchAuthView('login');
-            } catch (err) {
-                newPassErr.textContent = err.message;
-                window.showToast(err.message, 'error');
-            } finally {
-                setLoading('btnSubmitNewPassword', false);
-            }
-        });
-    }
-
-    // ==========================================
-    // Transição para Dashboard
-    // ==========================================
-    function showDashboard(user) {
-        if (authSection) authSection.classList.add('hidden');
-        if (dashboardSection) {
-            dashboardSection.classList.remove('hidden');
-            if (window.initDashboard) {
-                window.initDashboard(user);
-            }
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        if (errEl) errEl.textContent = '';
+        const code = otpInputs.map(i => i?.value || '').join('');
+        if (code.length < 4) {
+            if (errEl) errEl.textContent = 'Digite os 4 dígitos do código de verificação.';
+            return;
         }
-    }
 
-    window.logoutToAuth = function() {
-        window.api.auth.logout();
-        if (dashboardSection) dashboardSection.classList.add('hidden');
-        if (authSection) {
-            authSection.classList.remove('hidden');
-            window.switchAuthView('login');
-        }
-        window.showToast('Sessão encerrada.', 'info');
+        sessionStorage.setItem('recovery_code', code);
+        window.showToast?.('Código confirmado! Defina sua nova senha.', 'success');
+        setTimeout(() => {
+            window.location.href = 'nova-senha.html';
+        }, 600);
     };
+}
 
-    function setLoading(btnId, isLoading) {
-        const btn = document.getElementById(btnId);
-        if (!btn) return;
-        const txt = btn.querySelector('.btn-text');
-        const sp = btn.querySelector('.btn-spinner');
-        btn.disabled = isLoading;
-        if (txt) txt.classList.toggle('hidden', isLoading);
-        if (sp) sp.classList.toggle('hidden', !isLoading);
-    }
-});
+// 5. Recuperação - Etapa 3
+function setupRecoveryStep3() {
+    const form = document.getElementById('formRecoveryStep3');
+    if (!form) return;
 
-// Toast Global
-window.showToast = function(message, type = 'info', duration = 4000) {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
+    const emailInput = document.getElementById('recoveryEmailStep3');
+    const passInput = document.getElementById('recoveryNewPassword');
+    const confirmInput = document.getElementById('recoveryConfirmNewPassword');
+    const submitBtn = document.getElementById('btnRecoveryStep3Submit');
+    const passErr = document.getElementById('recoveryNewPassError');
+    const confirmErr = document.getElementById('recoveryConfirmPassError');
 
-    const toast = document.createElement('div');
-    toast.className = `toast ${type === 'error' ? 'toast-error' : type === 'success' ? 'toast-success' : ''}`;
-
-    let icon = `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
-    if (type === 'success') {
-        icon = `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-    } else if (type === 'error') {
-        icon = `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#ff4d6d" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+    const storedEmail = sessionStorage.getItem('recovery_email') || '';
+    const storedCode = sessionStorage.getItem('recovery_code') || '';
+    if (emailInput && storedEmail) {
+        emailInput.value = storedEmail;
     }
 
-    toast.innerHTML = `${icon}<span>${message}</span>`;
-    container.appendChild(toast);
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (passErr) passErr.textContent = '';
+        if (confirmErr) confirmErr.textContent = '';
 
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(-10px)';
-        toast.style.transition = 'all 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-    }, duration);
-};
+        const email = (emailInput?.value || storedEmail || '').trim();
+        const newPass = passInput?.value || '';
+        const confirmPass = confirmInput?.value || '';
+
+        let hasError = false;
+        if (!email) {
+            window.showToast?.('Informe o email.', 'error');
+            hasError = true;
+        }
+        if (newPass.length < 6) {
+            if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
+            hasError = true;
+        }
+        if (newPass !== confirmPass) {
+            if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
+            hasError = true;
+        }
+        if (hasError) return;
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+
+        try {
+            const res = await window.apiService.auth.resetPassword(email, storedCode, newPass);
+            sessionStorage.removeItem('recovery_email');
+            sessionStorage.removeItem('recovery_code');
+            window.showToast?.(res.message, 'success');
+            setTimeout(() => {
+                window.location.replace('login.html');
+            }, 800);
+        } catch (err) {
+            if (passErr) passErr.textContent = err.message || 'Erro ao redefinir senha.';
+            window.showToast?.(err.message || 'Erro ao redefinir senha.', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'LOGIN';
+        }
+    };
+}

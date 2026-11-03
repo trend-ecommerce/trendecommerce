@@ -218,13 +218,6 @@ def test_forecast_compare_endpoint(client):
     assert data["revenue_difference"] >= 0
 
 
-def test_trends_search(client):
-    """Testa busca de tendências de pesquisa."""
-    response = client.get("/api/v1/trends/search?limit=10")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-
 def test_discover_live_products(client):
     """Testa busca no catálogo oficial e tratamento de produto não cadastrado."""
     response = client.post("/api/v1/products/discover-live", json={

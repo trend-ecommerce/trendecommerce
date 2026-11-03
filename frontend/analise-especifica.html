@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrendCommerce AI - Análise Específica</title>
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- CSS Stylesheets -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/login.css">
+</head>
+<body class="dashboard-mode">
+    <div id="appRoot" class="app-root dashboard-view">
+        
+        <!-- Efeitos Visuais Cyberpunk de Fundo -->
+        <div id="backgroundEffects" class="background-effects">
+            <div class="hud-circle hud-circle-left"></div>
+            <div class="hud-circle hud-circle-right"></div>
+            <div class="hud-circle hud-circle-center"></div>
+            <div class="circuit-grid"></div>
+            <canvas id="circuit-canvas"></canvas>
+        </div>
+
+        <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+        <!-- Layout do Dashboard -->
+        <div id="dashboardSection" class="dashboard-layout sidebar-open">
+            
+            <!-- Barra Lateral de Navegação -->
+            <aside id="dashSidebar" class="dash-sidebar open" aria-hidden="false">
+                <div class="dash-user-profile">
+                    <div class="user-avatar-circle">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </div>
+                    <div class="user-info-text">
+                        <span id="dashUserName" class="user-info-name">Administrador</span>
+                        <button type="button" id="btnLogout" class="btn-logout-link">
+                            Sair
+                        </button>
+                    </div>
+                </div>
+
+                <nav class="dash-nav-menu">
+                    <a href="ia-preditiva.html" class="dash-nav-btn" style="text-decoration: none;">
+                        <span>IA PREDITIVA</span>
+                    </a>
+                    <a href="ranking.html" class="dash-nav-btn" style="text-decoration: none;">
+                        <span>RANKING PRODUTOS</span>
+                    </a>
+                    <a href="analise-especifica.html" class="dash-nav-btn active" style="text-decoration: none;">
+                        <span>ANÁLISE ESPECÍFICA</span>
+                    </a>
+                </nav>
+            </aside>
+
+            <!-- Área Principal -->
+            <div class="dash-main-area">
+                
+                <header class="dash-top-header">
+                    <div class="dash-header-left">
+                        <button type="button" id="sidebarToggleBtn" class="sidebar-toggle-btn" title="Alternar menu lateral" aria-label="Alternar menu lateral">
+                            <span class="toggle-dot"></span>
+                            <span class="toggle-dot"></span>
+                            <span class="toggle-dot"></span>
+                        </button>
+                    </div>
+                    <div class="dash-header-right">
+                        <div class="dash-brand-logo">
+                            <img src="assets/logo.png" alt="TrendEcommerce Logo" class="dash-brand-img">
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Conteúdo da Aba Análise Específica -->
+                <section class="dash-tab-content active">
+                    
+                    <!-- Barra de Busca Preditiva e Tempo Real -->
+                    <div id="specificSearchWrap" class="specific-search-wrap">
+                        <div class="search-input-box">
+                            <input
+                                type="text"
+                                id="specificSearchInput"
+                                class="specific-search-input"
+                                placeholder="Pesquisar produto no catálogo (ex: Notebook Dell, Creatina, Whey, Smartphone)..."
+                            >
+                            <button type="button" id="btnSpecificSearchLive" class="btn-live-search" title="Buscar produto no catálogo" style="background: transparent; border: none; cursor: pointer; padding: 0 8px; display: flex; align-items: center;">
+                                <svg class="search-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="2" style="width: 20px; height: 20px;">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <!-- Dropdown de Sugestões e Sincronização -->
+                        <div id="searchResultsDropdown" class="search-results-dropdown" style="display: none;">
+                        </div>
+                    </div>
+
+                    <!-- Card Detalhado de Análise -->
+                    <div class="dash-card specific-analysis-card">
+                        <div class="specific-card-header">
+                            <h2 id="specificCardProdTitle" class="specific-prod-title">IPHONE 15 PRO MAX</h2>
+                            <div id="specificCardProdPrice" class="specific-prod-price">PREÇO: R$ 4.342,98</div>
+                        </div>
+
+                        <!-- Barra de Horizonte de Previsão -->
+                        <div class="horizon-toggle-bar">
+                            <span class="horizon-label">Horizonte de Previsão IA:</span>
+                            <button type="button" class="horizon-btn active" data-days="7">7 DIAS</button>
+                            <button type="button" class="horizon-btn" data-days="14">14 DIAS</button>
+                            <button type="button" class="horizon-btn" data-days="30">30 DIAS</button>
+                        </div>
+
+                        <!-- Gráfico Específico Canvas 2D -->
+                        <div class="specific-chart-wrap">
+                            <canvas id="specificChartCanvas"></canvas>
+                            <div id="specificChartTooltip" class="chart-tooltip-bubble" style="display: none;">
+                                <div class="tooltip-title">PRODUTO</div>
+                                <div class="tooltip-price">R$ 0,00</div>
+                                <div class="tooltip-sold">0 VENDAS PREVISTAS</div>
+                            </div>
+                        </div>
+
+                        <!-- Grid de KPIs -->
+                        <div class="kpi-grid">
+                            <div class="kpi-box">
+                                <span class="kpi-title">DEMANDA TOTAL PROJETADA</span>
+                                <span id="kpiPredictedUnits" class="kpi-val">107 un</span>
+                            </div>
+                            <div class="kpi-box">
+                                <span class="kpi-title">FATURAMENTO ESTIMADO</span>
+                                <span id="kpiProjectedRevenue" class="kpi-val text-cyan">R$ 464.698,86</span>
+                            </div>
+                            <div class="kpi-box">
+                                <span class="kpi-title">MÉDIA DIÁRIA PROJETADA</span>
+                                <span id="kpiDailyAverage" class="kpi-val">15.3 un/dia</span>
+                            </div>
+                            <div class="kpi-box">
+                                <span class="kpi-title">ESTOQUE DE SEGURANÇA SUGERIDO</span>
+                                <span id="kpiStockBuffer" class="kpi-val text-emerald">135 un</span>
+                            </div>
+                        </div>
+
+                        <!-- Diagnóstico Preditivo da IA (XAI) -->
+                        <div id="analiseExplainabilityCard" class="ai-explainability-card">
+                            <div class="ai-explain-top-bar">
+                                <div class="ai-top-badge">
+                                    <i class="ph ph-sparkle" style="font-size: 14px;"></i>
+                                    <span>DIAGNÓSTICO PREDITIVO DA IA</span>
+                                </div>
+                                <div class="ai-driver-pill">
+                                    <i class="ph ph-lightning" style="color: #00f0ff; font-size: 14px;"></i>
+                                    <span>Fator Dominante:</span>
+                                    <strong id="xaiPrimaryDriver">Sazonalidade Semanal</strong>
+                                </div>
+                            </div>
+
+                            <div class="ai-explain-hero">
+                                <h3 id="xaiHeadline" class="ai-explain-headline">
+                                    Projeção de <span class="text-cyan">107 unidades</span> nos próximos 7 dias
+                                </h3>
+                                <p id="xaiSummary" class="ai-explain-subtext">
+                                    Cálculo preditivo computado através de gradiente impulsionado XGBoost.
+                                </p>
+                            </div>
+
+                            <div id="xaiFactorsGrid" class="ai-factors-grid-4col">
+                            </div>
+                        </div>
+                    </div>
+
+                </section>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/effects.js"></script>
+    <script src="js/toast.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/analise-especifica.js"></script>
+</body>
+</html>

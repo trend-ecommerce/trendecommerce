@@ -1,4 +1,4 @@
-"""Módulo de API do TrendEcommerce AI."""
-from .router import api_router
+"""Módulo de API do TrendCommerce."""
+from .main import app
 
-__all__ = ["api_router"]
+__all__ = ["app"]

@@ -1,13 +1,11 @@
 /**
- * BackgroundEffects.jsx
- * Efeito visual de fundo com circuitos cibernéticos e canvas interativo em React.
+ * TrendCommerce AI - Cyberpunk Background Particle Effects
+ * Animação de nós e circuitos cibernéticos interativos no canvas #circuit-canvas.
  */
 
-function BackgroundEffects() {
-    const canvasRef = React.useRef(null);
-
-    React.useEffect(() => {
-        const canvas = canvasRef.current;
+(function initBackgroundEffects() {
+    function startCircuitAnimation() {
+        const canvas = document.getElementById('circuit-canvas');
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
@@ -48,10 +46,8 @@ function BackgroundEffects() {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
                 ctx.fillStyle = `hsla(${this.hue}, 100%, 50%, ${this.opacity})`;
-                ctx.shadowBlur = 8;
                 ctx.shadowColor = `hsl(${this.hue}, 100%, 50%)`;
                 ctx.fill();
-                ctx.shadowBlur = 0;
             }
         }
 
@@ -84,20 +80,11 @@ function BackgroundEffects() {
         }
 
         animate();
+    }
 
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            cancelAnimationFrame(animationFrameId);
-        };
-    }, []);
-
-    return (
-        <div className="background-effects">
-            <div className="hud-circle hud-circle-left"></div>
-            <div className="hud-circle hud-circle-right"></div>
-            <div className="hud-circle hud-circle-center"></div>
-            <div className="circuit-grid"></div>
-            <canvas ref={canvasRef} id="circuit-canvas"></canvas>
-        </div>
-    );
-}
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startCircuitAnimation);
+    } else {
+        startCircuitAnimation();
+    }
+})();

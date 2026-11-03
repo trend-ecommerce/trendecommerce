@@ -33,42 +33,42 @@ class User(Base):
 
 
 class Product(Base):
-    """Tabela de produtos do catálogo."""
+    """Tabela de produtos cadastrados no catálogo."""
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    external_id = Column(String(255), nullable=True, default="", comment="ID ou SKU do produto")
-    platform = Column(String(50), default="proprio", comment="Origem do produto ou canal")
+    external_id = Column(String(100), unique=True, nullable=True, index=True)
+    platform = Column(String(50), default="proprio")
     title = Column(String(500), nullable=False)
-    category = Column(String(255), nullable=True)
-    price = Column(Float, nullable=False, default=0.0)
+    category = Column(String(255), nullable=True, index=True)
+    price = Column(Float, nullable=False)
     currency = Column(String(10), default="BRL")
     condition = Column(String(50), default="new")
     url = Column(Text, nullable=True)
     attributes = Column(JSON, nullable=True)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_active = Column(Boolean, default=True)
 
-    # Relacionamento 1 para N com Histórico de Vendas
-    sales_history = relationship("SalesHistory", back_populates="product", cascade="all, delete-orphan")
+    # Relacionamento com o Histórico de Vendas
+    sales_history = relationship(
+        "SalesHistory", 
+        back_populates="product", 
+        cascade="all, delete-orphan",
+        order_by="SalesHistory.date.desc()"
+    )
 
     __table_args__ = (
-        Index("idx_products_category", "category"),
-        Index("idx_products_is_active", "is_active"),
+        Index("idx_products_category_active", "category", "is_active"),
+        Index("idx_products_platform", "platform"),
     )
 
     def __repr__(self):
-        return f"<Product(id={self.id}, title='{self.title[:50]}', price={self.price})>"
+        return f"<Product(id={self.id}, title='{self.title[:30]}', price={self.price})>"
 
 
 class SalesHistory(Base):
-    """Tabela de histórico de vendas diárias.
-    
-    Registra a evolução das vendas e preços praticados ao longo do tempo.
-    Permite calcular crescimento, sazonalidade, faturamento e alimentar
-    os modelos preditivos de Machine Learning (XGBoost).
-    """
+    """Histórico temporal de vendas de cada produto para previsão preditiva."""
     __tablename__ = "sales_history"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
