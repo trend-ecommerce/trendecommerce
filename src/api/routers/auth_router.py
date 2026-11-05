@@ -206,10 +206,7 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
     if sb_status == "unconfirmed":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Seu e-mail ainda não foi verificado! Enviamos um link de confirmação para "
-                f"{email_key}. Acesse sua caixa de entrada (ou pasta de spam) e confirme seu e-mail para entrar."
-            )
+            detail="Confirme seu e-mail para acessar sua conta."
         )
 
     if sb_status == "confirmed":
@@ -243,10 +240,7 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Seu e-mail ainda não foi verificado! Enviamos um link de confirmação para "
-                    f"{email_key}. Acesse sua caixa de entrada (ou spam) e confirme seu e-mail antes de fazer login."
-                )
+                detail="Confirme seu e-mail para acessar sua conta."
             )
 
     _login_attempts.pop(email_key, None)

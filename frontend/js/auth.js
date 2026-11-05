@@ -82,46 +82,19 @@ function setupLoginForm() {
     const passErr = document.getElementById('loginPasswordError');
     const coldStartNotice = document.getElementById('coldStartNotice');
 
-    // Criar banner de verificação de e-mail se necessário
+    // Banner simples de verificação de e-mail
     let verifyBanner = document.getElementById('emailVerificationBanner');
     if (!verifyBanner && submitBtn) {
         verifyBanner = document.createElement('div');
         verifyBanner.id = 'emailVerificationBanner';
-        verifyBanner.style.cssText = 'display: none; width: 100%; margin-top: 10px; padding: 10px 14px; border-radius: 12px; font-size: 12px; line-height: 1.45; text-align: center;';
         submitBtn.insertAdjacentElement('beforebegin', verifyBanner);
     }
 
-    const showVerificationBanner = (type, htmlContent, targetEmail) => {
+    const showVerificationBanner = (type, message) => {
         if (!verifyBanner) return;
+        verifyBanner.className = type === 'success' ? 'success' : '';
+        verifyBanner.textContent = message;
         verifyBanner.style.display = 'block';
-        if (type === 'success') {
-            verifyBanner.style.background = 'rgba(16, 185, 129, 0.14)';
-            verifyBanner.style.border = '1px solid rgba(16, 185, 129, 0.45)';
-            verifyBanner.style.color = '#34d399';
-            verifyBanner.innerHTML = htmlContent;
-        } else {
-            verifyBanner.style.background = 'rgba(0, 212, 255, 0.1)';
-            verifyBanner.style.border = '1px solid rgba(0, 212, 255, 0.35)';
-            verifyBanner.style.color = '#e0f2fe';
-            verifyBanner.innerHTML = `
-                <div>${htmlContent}</div>
-                ${targetEmail ? `<button type="button" id="btnResendVerifyEmail" style="margin-top: 8px; background: rgba(0, 212, 255, 0.2); border: 1px solid rgba(0, 212, 255, 0.5); color: #00f0ff; border-radius: 999px; padding: 4px 14px; font-size: 11px; font-weight: 700; cursor: pointer;">Reenviar e-mail de confirmação</button>` : ''}
-            `;
-            const resendBtn = document.getElementById('btnResendVerifyEmail');
-            if (resendBtn && targetEmail) {
-                resendBtn.onclick = async () => {
-                    resendBtn.disabled = true;
-                    resendBtn.textContent = 'Enviando...';
-                    try {
-                        await window.apiService.auth.resendVerification(targetEmail);
-                        resendBtn.textContent = 'E-mail reenviado!';
-                    } catch (err) {
-                        resendBtn.disabled = false;
-                        resendBtn.textContent = 'Reenviar e-mail de confirmação';
-                    }
-                };
-            }
-        }
     };
 
     const params = new URLSearchParams(window.location.search);
@@ -135,13 +108,12 @@ function setupLoginForm() {
     if (params.get('verified') === '1' || hash.includes('access_token=')) {
         showVerificationBanner(
             'success',
-            '✅ <strong>E-mail confirmado com sucesso!</strong> Sua conta foi ativada. Digite sua senha para entrar.'
+            'E-mail confirmado com sucesso! Digite sua senha para entrar.'
         );
     } else if (params.get('pending_verify') === '1' && pendingEmail) {
         showVerificationBanner(
             'info',
-            `📧 <strong>Confirme seu e-mail para liberar o login!</strong><br>Enviamos um link de confirmação para <strong>${pendingEmail}</strong>. Verifique sua caixa de entrada e spam.`,
-            pendingEmail
+            'Confirme seu e-mail para acessar sua conta.'
         );
     }
 
@@ -149,6 +121,7 @@ function setupLoginForm() {
         e.preventDefault();
         if (emailErr) emailErr.textContent = '';
         if (passErr) passErr.textContent = '';
+        if (verifyBanner) verifyBanner.style.display = 'none';
 
         const email = (emailInput?.value || '').trim();
         const password = passInput?.value || '';
@@ -184,11 +157,11 @@ function setupLoginForm() {
             clearTimeout(timer);
             if (coldStartNotice) coldStartNotice.style.display = 'none';
             const msg = err.message || 'Email ou senha incorretos.';
-            if (msg.toLowerCase().includes('verificado') || msg.toLowerCase().includes('confirmação')) {
+            const lower = msg.toLowerCase();
+            if (lower.includes('verificado') || lower.includes('confirma') || lower.includes('e-mail ainda não')) {
                 showVerificationBanner(
                     'info',
-                    `⚠️ <strong>E-mail ainda não confirmado!</strong><br>${msg}`,
-                    email
+                    'Confirme seu e-mail para acessar sua conta.'
                 );
             } else if (passErr) {
                 passErr.textContent = msg;
