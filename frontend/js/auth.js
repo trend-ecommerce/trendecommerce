@@ -54,15 +54,27 @@ function setupPasswordToggles() {
         const btn = container.querySelector('button');
         if (input && btn && !btn.dataset.toggleInitialized) {
             btn.dataset.toggleInitialized = 'true';
-            btn.onclick = (e) => {
+            btn.setAttribute('aria-label', 'Ver senha');
+            btn.setAttribute('title', 'Ver senha');
+
+            btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 const isPass = input.type === 'password';
                 input.type = isPass ? 'text' : 'password';
+
+                const label = isPass ? 'Ocultar senha' : 'Ver senha';
+                btn.setAttribute('aria-label', label);
+                btn.setAttribute('title', label);
+
                 const icon = btn.querySelector('i');
                 if (icon) {
                     icon.className = isPass ? 'ph ph-eye-slash' : 'ph ph-eye';
+                } else {
+                    btn.innerHTML = isPass
+                        ? '<i class="ph ph-eye-slash"></i>'
+                        : '<i class="ph ph-eye"></i>';
                 }
-            };
+            });
         }
     });
 }

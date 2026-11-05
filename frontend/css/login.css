@@ -207,6 +207,7 @@ textarea {
     cursor: pointer;
     color: #A9B8C7;
     transition: color 0.2s ease;
+    z-index: 2;
 }
 
 .password-container button:hover {
