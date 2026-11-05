@@ -1,7 +1,8 @@
 """Carregador de dados iniciais (Seed Data).
 
-Injeta o catálogo de produtos e o histórico de vendas a partir do
-arquivo data/initial_seed.json caso o banco de dados esteja vazio.
+Sincroniza automaticamente o catálogo de produtos e o histórico de vendas
+da API de Histórico de Vendas caso o banco de dados esteja vazio ou contenha
+registros legados.
 """
 
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from src.database.models import Product, SalesHistory
+from src.services.vendas_api_client import vendas_client
 
 
 def _parse_dt(val):
@@ -22,43 +24,62 @@ def _parse_dt(val):
 
 
 def seed_database_if_empty(session: Session):
-    """Sincroniza produtos e histórico do initial_seed.json se o banco estiver vazio."""
-    seed_file = Path(__file__).parent.parent.parent / "data" / "initial_seed.json"
-    if not seed_file.exists():
-        return
-
+    """Sincroniza produtos e histórico da API de Vendas se o banco estiver vazio ou desatualizado."""
     try:
+        products_count = session.query(Product).count()
+        legacy_count = session.query(Product).filter(
+            Product.platform.in_(["mercadolivre", "amazon"])
+        ).count()
+
+        # Se o banco estiver vazio ou contiver produtos legados antigos, sincronizar com a API oficial
+        if products_count == 0 or legacy_count > 0:
+            if legacy_count > 0:
+                session.query(SalesHistory).delete()
+                session.query(Product).delete()
+                session.commit()
+
+            sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2024-01-01")
+            if sync_res.get("success"):
+                print(
+                    f"[SeedLoader] Catálogo oficial sincronizado: "
+                    f"{sync_res['total_products']} produtos e {sync_res['total_sales']:,} vendas."
+                )
+                return
+
+        # Fallback para initial_seed.json caso a API externa não esteja acessível e o banco esteja vazio
+        if session.query(Product).count() > 0:
+            return
+
+        seed_file = Path(__file__).parent.parent.parent / "data" / "initial_seed.json"
+        if not seed_file.exists():
+            return
+
         with open(seed_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         products_data = data.get("products", [])
         sales_data = data.get("sales_history", [])
 
-        # 1. Inserir ou atualizar produtos caso a tabela esteja vazia
-        products_count = session.query(Product).count()
-        if products_count == 0:
-            for p_data in products_data:
-                product = Product(
-                    id=p_data.get("id"),
-                    external_id=p_data.get("external_id") or f"PROD_{p_data.get('id')}",
-                    platform=p_data.get("platform") or "proprio",
-                    title=p_data.get("title") or "Produto",
-                    category=p_data.get("category") or "Geral",
-                    price=float(p_data.get("price") or 100.0),
-                    currency=p_data.get("currency") or "BRL",
-                    condition=p_data.get("condition") or "new",
-                    url=p_data.get("url"),
-                    attributes=p_data.get("attributes"),
-                    created_at=_parse_dt(p_data.get("created_at")),
-                    updated_at=_parse_dt(p_data.get("updated_at")),
-                    is_active=bool(p_data.get("is_active", True))
-                )
-                session.add(product)
-            session.flush()
+        for p_data in products_data:
+            product = Product(
+                id=p_data.get("id"),
+                external_id=p_data.get("external_id") or f"PROD_{p_data.get('id')}",
+                platform=p_data.get("platform") or "api_vendas",
+                title=p_data.get("title") or "Produto",
+                category=p_data.get("category") or "Geral",
+                price=float(p_data.get("price") or 100.0),
+                currency=p_data.get("currency") or "BRL",
+                condition=p_data.get("condition") or "new",
+                url=p_data.get("url"),
+                attributes=p_data.get("attributes"),
+                created_at=_parse_dt(p_data.get("created_at")),
+                updated_at=_parse_dt(p_data.get("updated_at")),
+                is_active=bool(p_data.get("is_active", True))
+            )
+            session.add(product)
+        session.flush()
 
-        # 2. Sincronizar vendas se a tabela de histórico estiver vazia
-        sales_count = session.query(SalesHistory).count()
-        if sales_count == 0 and sales_data:
+        if sales_data:
             today_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
             seed_dates = [_parse_dt(s.get("date")) for s in sales_data if s.get("date")]
             max_seed_date = max(seed_dates) if seed_dates else today_midnight
@@ -73,7 +94,7 @@ def seed_database_if_empty(session: Session):
                     quantity_sold=int(s_data.get("quantity_sold", 10)),
                     price_at_date=float(s_data.get("price_at_date", 100.0)),
                     available_quantity=int(s_data.get("available_quantity", 50)),
-                    platform=s_data.get("platform", "proprio"),
+                    platform=s_data.get("platform", "api_vendas"),
                     collected_at=_parse_dt(s_data.get("collected_at"))
                 )
                 session.add(sales_entry)
