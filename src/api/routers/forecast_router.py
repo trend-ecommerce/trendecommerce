@@ -13,7 +13,11 @@ from src.schemas.forecast_schema import (
     DailyForecastItem,
     ForecastSummaryResponse,
     ForecastRankingResponse,
-    RankingForecastItem
+    RankingForecastItem,
+    ProductTimelineResponse,
+    TimelineHistoryPoint,
+    TimelineForecastPoint,
+    TimelineMetrics
 )
 
 router = APIRouter(prefix="/forecast", tags=["Previsão de Demanda & IA"])
@@ -479,3 +483,190 @@ def compare_products_forecast(
         demand_leader=demand_leader,
         verdict=verdict
     )
+
+MONTHS_PT_BR = {
+    1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
+    7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'
+}
+
+_timeline_cache: dict[tuple[int, str, int], tuple[float, ProductTimelineResponse]] = {}
+
+
+@router.get("/timeline/{product_id}", response_model=ProductTimelineResponse, summary="Linha do tempo híbrida (histórico real + projeção XGBoost)")
+def get_product_demand_timeline(
+    product_id: int,
+    history_range: str = Query("6m", description="Intervalo retroativo: '1m', '6m', '1y' ou '5y'"),
+    horizon_days: int = Query(14, ge=7, le=30, description="Horizonte de projeção em dias (7, 14 ou 30)"),
+    db: Session = Depends(get_db),
+    forecaster: FutureForecaster = Depends(get_ml_forecaster)
+):
+    """
+    Retorna a linha do tempo contínua combinando histórico passado real e projeção preditiva futura do XGBoost.
+    Gera agregações inteligentes por intervalo (diário, semanal ou mensal) para máxima fluidez e latência inferior a 30ms.
+    """
+    history_range_clean = history_range.lower().strip()
+    if history_range_clean not in ["1m", "6m", "1y", "5y"]:
+        history_range_clean = "6m"
+
+    now_ts = time.time()
+    cache_key = (product_id, history_range_clean, horizon_days)
+    if cache_key in _timeline_cache:
+        cached_ts, cached_resp = _timeline_cache[cache_key]
+        if now_ts - cached_ts < 120:  # 2 min cache
+            return cached_resp
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Produto com ID {product_id} não encontrado."
+        )
+
+    sales = db.query(SalesHistory)\
+              .filter(SalesHistory.product_id == product_id)\
+              .order_by(SalesHistory.date.asc())\
+              .all()
+
+    if not sales:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não há histórico de vendas suficiente para este produto gerar a linha do tempo."
+        )
+
+    # 1. Carregar DataFrame completo de vendas do produto
+    sales_df = pd.DataFrame([
+        {
+            "product_id": s.product_id,
+            "date": s.date,
+            "quantity_sold": s.quantity_sold,
+            "price": s.price_at_date or product.price or 100.0,
+            "available_quantity": s.available_quantity or 50,
+            "platform": s.platform
+        }
+        for s in sales
+    ])
+    sales_df["date"] = pd.to_datetime(sales_df["date"])
+    max_date = sales_df["date"].max()
+
+    # 2. Agregação inteligente do Histórico Passado conforme o range
+    history_points: list[TimelineHistoryPoint] = []
+    
+    if history_range_clean == "1m":
+        # 30 dias diários brutos (~30 pontos)
+        start_date = max_date - pd.Timedelta(days=30)
+        subset = sales_df[sales_df["date"] >= start_date].copy()
+        for _, row in subset.iterrows():
+            d = row["date"]
+            history_points.append(TimelineHistoryPoint(
+                date=d.strftime("%d/%m/%Y"),
+                label=d.strftime("%d/%m"),
+                demand=round(float(row["quantity_sold"]), 1),
+                is_real=True
+            ))
+    elif history_range_clean == "6m":
+        # 6 meses com agrupamento semanal (~26 pontos)
+        start_date = max_date - pd.Timedelta(days=182)
+        subset = sales_df[sales_df["date"] >= start_date].copy()
+        subset["period"] = subset["date"].dt.to_period("W")
+        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
+        for _, row in grp.iterrows():
+            d = row["date"]
+            history_points.append(TimelineHistoryPoint(
+                date=d.strftime("%d/%m/%Y"),
+                label=d.strftime("%d/%m"),
+                demand=round(float(row["quantity_sold"]), 1),
+                is_real=True
+            ))
+    elif history_range_clean == "1y":
+        # 1 ano com agrupamento semanal (~52 pontos)
+        start_date = max_date - pd.Timedelta(days=365)
+        subset = sales_df[sales_df["date"] >= start_date].copy()
+        subset["period"] = subset["date"].dt.to_period("W")
+        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
+        for _, row in grp.iterrows():
+            d = row["date"]
+            lbl = f"{MONTHS_PT_BR[d.month]}/{str(d.year)[2:]}" if d.day <= 7 else d.strftime("%d/%m")
+            history_points.append(TimelineHistoryPoint(
+                date=d.strftime("%d/%m/%Y"),
+                label=lbl,
+                demand=round(float(row["quantity_sold"]), 1),
+                is_real=True
+            ))
+    else:  # "5y"
+        # 5 anos com agrupamento mensal (~60 pontos)
+        start_date = max_date - pd.DateOffset(years=5)
+        subset = sales_df[sales_df["date"] >= start_date].copy()
+        subset["period"] = subset["date"].dt.to_period("M")
+        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
+        for _, row in grp.iterrows():
+            d = row["date"]
+            lbl = f"{MONTHS_PT_BR[d.month]}/{str(d.year)[2:]}"
+            history_points.append(TimelineHistoryPoint(
+                date=d.strftime("15/%m/%Y"),
+                label=lbl,
+                demand=round(float(row["quantity_sold"]), 1),
+                is_real=True
+            ))
+
+    # 3. Métricas históricas do subset selecionado
+    if not subset.empty:
+        hist_avg = round(float(subset["quantity_sold"].mean()), 1)
+        hist_peak = round(float(subset["quantity_sold"].max()), 1)
+        hist_trough = round(float(subset["quantity_sold"].min()), 1)
+    else:
+        hist_avg, hist_peak, hist_trough = 0.0, 0.0, 0.0
+
+    # 4. Projeção Futura com o motor XGBoost Real
+    product_series = pd.Series({
+        "product_id": product.id,
+        "title": product.title,
+        "category": product.category or "Geral",
+        "price": product.price or 100.0,
+        "base_price": product.price or 100.0,
+        "platform": product.platform
+    })
+
+    forecast_res = forecaster.forecast_product(
+        product=product_series,
+        product_sales_df=sales_df,
+        horizon_days=horizon_days
+    )
+
+    forecast_points = [
+        TimelineForecastPoint(
+            date=day.date,
+            label=day.date[:5] if len(day.date) >= 5 else day.date,
+            predicted_demand=day.predicted_demand,
+            confidence_min=day.confidence_min,
+            confidence_max=day.confidence_max,
+            is_real=False
+        )
+        for day in forecast_res.days
+    ]
+
+    metrics = TimelineMetrics(
+        historical_avg=hist_avg,
+        historical_peak=hist_peak,
+        historical_trough=hist_trough,
+        forecast_total=forecast_res.total_predicted_units,
+        forecast_avg=forecast_res.daily_average,
+        forecast_revenue=forecast_res.total_projected_revenue,
+        recommended_buffer=forecast_res.recommended_stock_buffer
+    )
+
+    response_obj = ProductTimelineResponse(
+        product_id=product.id,
+        product_title=product.title,
+        category=product.category or "Geral",
+        price=float(product.price or 100.0),
+        current_date=max_date.strftime("%d/%m/%Y"),
+        history_range=history_range_clean,
+        horizon_days=horizon_days,
+        history_points=history_points,
+        forecast_points=forecast_points,
+        metrics=metrics,
+        explanation=forecast_res.explanation
+    )
+
+    _timeline_cache[cache_key] = (now_ts, response_obj)
+    return response_obj

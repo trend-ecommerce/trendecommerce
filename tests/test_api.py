@@ -396,3 +396,43 @@ def test_recommendations_top_products_with_real_ml(client):
         assert "estimated_revenue" in first
         assert "quadrant" in first
         assert first["predicted_units"] > 0
+
+
+def test_forecast_timeline_endpoint(client):
+    """Testa endpoint da Linha do Tempo Híbrida (histórico real + projeção XGBoost)."""
+    # 1. Testar range padrão (6m, 14d) para produto existente
+    resp = client.get("/api/v1/forecast/timeline/1?history_range=6m&horizon_days=14")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["product_id"] == 1
+    assert "product_title" in data
+    assert "current_date" in data
+    assert data["history_range"] == "6m"
+    assert data["horizon_days"] == 14
+    assert len(data["history_points"]) > 0
+    assert len(data["forecast_points"]) == 14
+    assert "metrics" in data
+    assert data["metrics"]["historical_avg"] >= 0
+    assert data["metrics"]["historical_peak"] >= data["metrics"]["historical_avg"]
+    assert data["metrics"]["forecast_total"] > 0
+    assert data["metrics"]["forecast_avg"] > 0
+    assert all(p["is_real"] is True for p in data["history_points"])
+    assert all("confidence_min" in p and "confidence_max" in p for p in data["forecast_points"])
+
+    # 2. Testar range de 1 mês com 7 dias
+    resp_1m = client.get("/api/v1/forecast/timeline/1?history_range=1m&horizon_days=7")
+    assert resp_1m.status_code == 200
+    d_1m = resp_1m.json()
+    assert len(d_1m["history_points"]) <= 32
+    assert len(d_1m["forecast_points"]) == 7
+
+    # 3. Testar range de 5 anos com 30 dias (deve conter ~60 pontos mensais)
+    resp_5y = client.get("/api/v1/forecast/timeline/1?history_range=5y&horizon_days=30")
+    assert resp_5y.status_code == 200
+    d_5y = resp_5y.json()
+    assert len(d_5y["history_points"]) >= 50
+    assert len(d_5y["forecast_points"]) == 30
+
+    # 4. Testar produto inexistente (deve retornar 404)
+    resp_404 = client.get("/api/v1/forecast/timeline/999999?history_range=6m&horizon_days=14")
+    assert resp_404.status_code == 404

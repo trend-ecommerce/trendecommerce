@@ -262,6 +262,10 @@ class ApiService {
                     horizon_days: parseInt(horizonDays)
                 })
             });
+        },
+
+        timeline: async (productId, historyRange = '6m', horizonDays = 14) => {
+            return await this.request(`/forecast/timeline/${parseInt(productId)}?history_range=${encodeURIComponent(historyRange)}&horizon_days=${parseInt(horizonDays)}`);
         }
     };
 
