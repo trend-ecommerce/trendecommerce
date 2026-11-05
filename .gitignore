@@ -45,3 +45,4 @@ data/*.db.bak
 # Models
 models/*.pkl
 models/*.json
+.vercel

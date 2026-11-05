@@ -110,6 +110,22 @@ def test_auth_forgot_and_reset_password(client):
     assert req_resp.json()["success"] is True
     assert "admin@trendecommerce.com" in req_resp.json()["message"]
 
+    # 1. Validar código incorreto
+    err_verify = client.post("/api/v1/auth/verify-reset-code", json={
+        "email": "admin@trendecommerce.com",
+        "code": "0000"
+    })
+    assert err_verify.status_code == 400
+
+    # 2. Validar código correto / fallback aceito
+    ok_verify = client.post("/api/v1/auth/verify-reset-code", json={
+        "email": "admin@trendecommerce.com",
+        "code": "1234"
+    })
+    assert ok_verify.status_code == 200
+    assert ok_verify.json()["success"] is True
+
+    # 3. Redefinir senha com sucesso
     reset_resp = client.post("/api/v1/auth/reset-password", json={
         "email": "admin@trendecommerce.com",
         "code": "1234",

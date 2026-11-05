@@ -32,9 +32,11 @@
                 <h1>SENHA:</h1>
                 <div class="password-container">
                     <input class="login-input" type="password" id="senha" placeholder="Digite sua senha..." required autocomplete="current-password">
-                    <button type="button" id="toggleSenha"><i class="ph ph-eye"></i></button>
+                    <button type="button" id="toggleSenha" aria-label="Ver senha" title="Ver senha"><i class="ph ph-eye"></i></button>
                 </div>
                 <span id="loginPasswordError" class="login-field-error"></span>
+
+                <div id="emailVerificationBanner"></div>
 
                 <button type="submit" id="btnLoginSubmit" class="button-right">ENTRAR</button>
 

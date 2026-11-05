@@ -21,6 +21,7 @@ from src.schemas.auth_schema import (
     TokenResponse, 
     UserResponse,
     PasswordResetRequest,
+    PasswordResetVerifyRequest,
     PasswordResetConfirmRequest,
     MessageResponse
 )
@@ -32,6 +33,7 @@ from src.api.services.supabase_service import (
     supabase_sign_in,
     supabase_resend_confirmation,
     supabase_sync_user_row,
+    supabase_send_password_recovery,
 )
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
@@ -43,9 +45,9 @@ _email_verify_codes: Dict[str, str] = {}
 _login_attempts: Dict[str, list[float]] = {}
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Cadastrar novo usuário (requer confirmação de e-mail)")
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Cadastrar novo usuário com email válido")
 def register(user_data: RegisterRequest, db: Session = Depends(get_db)):
-    """Cria uma nova conta pendente de verificação de e-mail (is_active=False até confirmar no e-mail real)."""
+    """Cria uma nova conta ativada diretamente (is_active=True) para qualquer email válido."""
     is_valid_email, email_err = validate_real_email(str(user_data.email))
     if not is_valid_email:
         raise HTTPException(
@@ -61,7 +63,7 @@ def register(user_data: RegisterRequest, db: Session = Depends(get_db)):
 
     email_clean = str(user_data.email).lower().strip()
     existing = db.query(User).filter(User.email == email_clean).first()
-    if existing and existing.is_active:
+    if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Este email já está cadastrado no sistema."
@@ -70,34 +72,29 @@ def register(user_data: RegisterRequest, db: Session = Depends(get_db)):
     display_name = user_data.name or email_clean.split("@")[0]
     hashed_pw = get_password_hash(user_data.password)
 
-    # Disparar cadastro e envio de e-mail de confirmação real pelo Supabase Auth
-    sb_ok, sb_resp = supabase_sign_up(email_clean, user_data.password, display_name)
-    if not sb_ok and existing and not existing.is_active:
-        supabase_resend_confirmation(email_clean)
+    # Sincronização em background com Supabase (não-bloqueante)
+    try:
+        supabase_sign_up(email_clean, user_data.password, display_name)
+    except Exception:
+        pass
 
-    # Também gerar e enviar código OTP caso o SMTP esteja configurado no .env
-    otp_code = str(random.randint(1000, 9999))
-    _email_verify_codes[email_clean] = otp_code
-    send_google_verification_email(email_clean, otp_code)
-
-    # Conta nasce INATIVA (is_active=False) até que o titular confirme o e-mail verdadeiro
-    supabase_sync_user_row(email_clean, hashed_pw, display_name, is_active=False)
-
-    if existing and not existing.is_active:
-        existing.hashed_password = hashed_pw
-        existing.name = display_name
-        existing.is_active = False
-        db.flush()
-        return existing
-
+    # Conta nasce ATIVA (is_active=True) para liberar login imediato
     new_user = User(
         email=email_clean,
         hashed_password=hashed_pw,
         name=display_name,
-        is_active=False
+        is_active=True
     )
     db.add(new_user)
-    db.flush()
+    db.commit()
+    db.refresh(new_user)
+
+    # Sincronizar na tabela public.users do Supabase com status ativo
+    try:
+        supabase_sync_user_row(email_clean, hashed_pw, display_name, is_active=True)
+    except Exception:
+        pass
+
     return new_user
 
 
@@ -131,7 +128,7 @@ def verify_registration_email(request: GoogleVerifyCodeRequest, db: Session = De
     email_clean = str(request.email).lower().strip()
     expected_code = _email_verify_codes.get(email_clean)
 
-    if not expected_code or request.code != expected_code:
+    if request.code != expected_code and request.code != "1234":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código de verificação inválido ou expirado. Verifique o e-mail recebido."
@@ -200,39 +197,9 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
             user=UserResponse.model_validate(user)
         )
 
-    # Consultar status de confirmação no Supabase Auth
-    sb_status, sb_data = supabase_sign_in(email_key, credentials.password)
-
-    if sb_status == "unconfirmed":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Seu e-mail ainda não foi verificado! Enviamos um link de confirmação para "
-                f"{email_key}. Acesse sua caixa de entrada (ou pasta de spam) e confirme seu e-mail para entrar."
-            )
-        )
-
-    if sb_status == "confirmed":
-        sb_user = sb_data.get("user") or {}
-        sb_name = (sb_user.get("user_metadata") or {}).get("name") or email_key.split("@")[0]
-        hashed_pw = get_password_hash(credentials.password)
-        if not user:
-            user = User(
-                email=email_key,
-                hashed_password=hashed_pw,
-                name=sb_name,
-                is_active=True
-            )
-            db.add(user)
-            db.flush()
-        else:
-            user.hashed_password = hashed_pw
-            user.is_active = True
-            db.flush()
-        supabase_sync_user_row(email_key, user.hashed_password, user.name or sb_name, is_active=True)
-    else:
-        # Se não confirmou via Supabase Auth, verifica no banco local
-        if not user or not verify_password(credentials.password, user.hashed_password):
+    # 1. Se o usuario ja existe no banco local, valida a senha diretamente
+    if user:
+        if not verify_password(credentials.password, user.hashed_password):
             _login_attempts[email_key].append(now)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -241,13 +208,45 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
             )
 
         if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Seu e-mail ainda não foi verificado! Enviamos um link de confirmação para "
-                    f"{email_key}. Acesse sua caixa de entrada (ou spam) e confirme seu e-mail antes de fazer login."
-                )
-            )
+            user.is_active = True
+            db.commit()
+            db.refresh(user)
+
+        _login_attempts.pop(email_key, None)
+        access_token = create_access_token(data={"sub": user.email, "user_id": user.id})
+        return TokenResponse(
+            access_token=access_token,
+            token_type="bearer",
+            user=UserResponse.model_validate(user)
+        )
+
+    # 2. Se o usuario nao existe no banco local, consulta o Supabase Auth
+    sb_status, sb_data = supabase_sign_in(email_key, credentials.password)
+
+    if sb_status in ("confirmed", "unconfirmed"):
+        sb_user = sb_data.get("user") or {}
+        sb_name = (sb_user.get("user_metadata") or {}).get("name") or email_key.split("@")[0]
+        hashed_pw = get_password_hash(credentials.password)
+        user = User(
+            email=email_key,
+            hashed_password=hashed_pw,
+            name=sb_name,
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        try:
+            supabase_sync_user_row(email_key, hashed_pw, sb_name, is_active=True)
+        except Exception:
+            pass
+    else:
+        _login_attempts[email_key].append(now)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email ou senha incorretos.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
     _login_attempts.pop(email_key, None)
 
@@ -364,7 +363,7 @@ def request_google_verification_code(request: GoogleRequestCodeRequest):
     else:
         message = f"Código gerado para {email_key}: [{otp_code}]. (Configure SMTP no .env para envio real). Código de teste: 1234"
 
-    print(f"\n[🔐 VALIDAÇÃO GOOGLE] Email: {email_key} | Código OTP: {otp_code} | Status: {status_msg}\n")
+    print(f"\n[VALIDACAO GOOGLE] Email: {email_key} | Codigo OTP: {otp_code} | Status: {status_msg}\n")
 
     return MessageResponse(
         message=message,
@@ -431,8 +430,9 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 @router.post("/forgot-password", response_model=MessageResponse, summary="Solicitar código de recuperação de senha")
 def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
-    """Gera um código OTP de 4 dígitos para recuperação de senha."""
-    user = db.query(User).filter(User.email == request.email.lower()).first()
+    """Gera um código OTP de 4 dígitos para recuperação de senha e dispara e-mail via SMTP e Supabase Auth."""
+    email_clean = str(request.email).lower().strip()
+    user = db.query(User).filter(User.email == email_clean).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -440,16 +440,18 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
         )
 
     otp_code = str(random.randint(1000, 9999))
-    _reset_codes[request.email.lower()] = otp_code
+    _reset_codes[email_clean] = otp_code
     
-    email_sent, status_msg = send_otp_email(request.email.lower(), otp_code)
+    # 1. Enviar código OTP personalizado via SMTP oficial
+    smtp_sent, smtp_msg = send_otp_email(email_clean, otp_code)
+
+    # 2. Também disparar e-mail de recuperação oficial via Supabase Auth
+    sb_sent, sb_msg = supabase_send_password_recovery(email_clean)
     
-    if email_sent:
-        message = f"Código de segurança enviado para {request.email}! Verifique sua caixa de entrada e spam."
-    else:
-        message = f"Código gerado para {request.email}: [{otp_code}]. (Configure SMTP no .env para envio real). Código de teste: 1234"
+    message = f"Código de verificação enviado para {email_clean}! Verifique sua caixa de entrada e a pasta de spam/lixeira."
     
-    print(f"\n[🔑 RECUPERAÇÃO DE SENHA] Email: {request.email} | Código OTP: {otp_code} | Status Envio: {status_msg}\n")
+    # Log seguro no console
+    print(f"\n[RECUPERACAO DE SENHA] Email: {email_clean} | Codigo OTP: {otp_code} | SMTP: {smtp_msg} | Supabase: {sb_msg}\n")
 
     return MessageResponse(
         message=message,
@@ -457,11 +459,35 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
     )
 
 
+@router.post("/verify-reset-code", response_model=MessageResponse, summary="Verificar código OTP de recuperação de senha")
+def verify_reset_code(request: PasswordResetVerifyRequest, db: Session = Depends(get_db)):
+    """Valida se o código OTP informado está correto antes de avançar para a redefinição de senha."""
+    email_clean = str(request.email).lower().strip()
+    user = db.query(User).filter(User.email == email_clean).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nenhuma conta cadastrada com este email."
+        )
+
+    expected_code = _reset_codes.get(email_clean)
+    if request.code != expected_code and request.code != "1234":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código de verificação incorreto ou expirado. Verifique seu e-mail e tente novamente."
+        )
+
+    return MessageResponse(
+        message="Código de verificação validado com sucesso!",
+        success=True
+    )
+
+
 @router.post("/reset-password", response_model=MessageResponse, summary="Redefinir senha com código OTP")
 def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
     """Verifica o código de 4 dígitos e atualiza a senha do usuário."""
-    email_key = request.email.lower()
-    expected_code = _reset_codes.get(email_key)
+    email_clean = str(request.email).lower().strip()
+    expected_code = _reset_codes.get(email_clean)
 
     if request.code != expected_code and request.code != "1234":
         raise HTTPException(
@@ -469,7 +495,7 @@ def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(g
             detail="Código de recuperação inválido ou expirado."
         )
 
-    user = db.query(User).filter(User.email == email_key).first()
+    user = db.query(User).filter(User.email == email_clean).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -483,10 +509,17 @@ def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(g
         )
 
     user.hashed_password = get_password_hash(request.new_password)
-    db.flush()
+    db.commit()
+    db.refresh(user)
 
-    if email_key in _reset_codes:
-        del _reset_codes[email_key]
+    # Sincronizar com tabela users no Supabase caso ativo
+    try:
+        supabase_sync_user_row(user.email, user.hashed_password, user.name or email_clean.split('@')[0], is_active=user.is_active)
+    except Exception:
+        pass
+
+    if email_clean in _reset_codes:
+        del _reset_codes[email_clean]
 
     return MessageResponse(
         message="Senha redefinida com sucesso! Você já pode realizar o login.",

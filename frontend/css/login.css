@@ -207,6 +207,7 @@ textarea {
     cursor: pointer;
     color: #A9B8C7;
     transition: color 0.2s ease;
+    z-index: 2;
 }
 
 .password-container button:hover {
@@ -357,7 +358,30 @@ textarea {
     text-align: center;
 }
 
-#emailVerificationBanner,
+#emailVerificationBanner {
+    display: none;
+    width: 100%;
+    max-width: 300px;
+    align-self: center;
+    margin-top: 6px;
+    margin-bottom: 2px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+    background: rgba(0, 174, 239, 0.12);
+    border: 1px solid rgba(0, 174, 239, 0.3);
+    color: #7dd3fc;
+    box-sizing: border-box;
+}
+
+#emailVerificationBanner.success {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.35);
+    color: #34d399;
+}
+
 #coldStartNotice {
     width: 100%;
     max-width: 300px;
