@@ -105,7 +105,15 @@ function setupLoginForm() {
             verifyBanner.style.color = '#e0f2fe';
             verifyBanner.innerHTML = `
                 <div>${htmlContent}</div>
-                ${targetEmail ? `<button type="button" id="btnResendVerifyEmail" style="margin-top: 8px; background: rgba(0, 212, 255, 0.2); border: 1px solid rgba(0, 212, 255, 0.5); color: #00f0ff; border-radius: 999px; padding: 4px 14px; font-size: 11px; font-weight: 700; cursor: pointer;">Reenviar e-mail de confirmação</button>` : ''}
+                ${targetEmail ? `
+                <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: center;">
+                    <div style="display: flex; gap: 6px; justify-content: center; align-items: center; width: 100%;">
+                        <input type="text" id="verifyOtpInput" placeholder="Código de 4 dígitos" style="width: 140px; text-align: center; padding: 5px 8px; border-radius: 6px; border: 1px solid rgba(0, 212, 255, 0.5); background: #07192e; color: #fff; font-size: 12px;" maxlength="4" />
+                        <button type="button" id="btnConfirmOtpEmail" style="background: #00d4ff; color: #040d1a; border: none; border-radius: 6px; padding: 6px 12px; font-size: 11px; font-weight: 700; cursor: pointer;">Ativar Conta</button>
+                    </div>
+                    <button type="button" id="btnResendVerifyEmail" style="background: transparent; border: none; color: #38bdf8; text-decoration: underline; font-size: 11px; cursor: pointer;">Reenviar e-mail de confirmação</button>
+                    <div id="otpVerifyError" style="font-size: 11px; color: #ff6b81; display: none;"></div>
+                </div>` : ''}
             `;
             const resendBtn = document.getElementById('btnResendVerifyEmail');
             if (resendBtn && targetEmail) {
@@ -113,11 +121,42 @@ function setupLoginForm() {
                     resendBtn.disabled = true;
                     resendBtn.textContent = 'Enviando...';
                     try {
-                        await window.apiService.auth.resendVerification(targetEmail);
+                        const res = await window.apiService.auth.resendVerification(targetEmail);
                         resendBtn.textContent = 'E-mail reenviado!';
+                        if (res && res.message) {
+                            showVerificationBanner('info', res.message, targetEmail);
+                        }
                     } catch (err) {
                         resendBtn.disabled = false;
                         resendBtn.textContent = 'Reenviar e-mail de confirmação';
+                        const otpErr = document.getElementById('otpVerifyError');
+                        if (otpErr) {
+                            otpErr.style.display = 'block';
+                            otpErr.textContent = err.message || 'Erro ao reenviar confirmação.';
+                        }
+                    }
+                };
+            }
+            const btnConfirm = document.getElementById('btnConfirmOtpEmail');
+            const inpOtp = document.getElementById('verifyOtpInput');
+            const otpErr = document.getElementById('otpVerifyError');
+            if (btnConfirm && inpOtp && targetEmail) {
+                btnConfirm.onclick = async () => {
+                    const code = inpOtp.value.trim();
+                    if (!code) {
+                        if (otpErr) { otpErr.style.display = 'block'; otpErr.textContent = 'Digite o código de 4 dígitos.'; }
+                        return;
+                    }
+                    btnConfirm.disabled = true;
+                    btnConfirm.textContent = 'Ativando...';
+                    try {
+                        await window.apiService.auth.verifyEmail(targetEmail, code);
+                        showVerificationBanner('success', '✅ <strong>Conta ativada com sucesso!</strong> Digite sua senha para entrar.');
+                        sessionStorage.removeItem('pending_verify_email');
+                    } catch (err) {
+                        btnConfirm.disabled = false;
+                        btnConfirm.textContent = 'Ativar Conta';
+                        if (otpErr) { otpErr.style.display = 'block'; otpErr.textContent = err.message || 'Código incorreto.'; }
                     }
                 };
             }
@@ -132,16 +171,15 @@ function setupLoginForm() {
         emailInput.value = pendingEmail;
     }
 
-    if (params.get('verified') === '1' || hash.includes('access_token=')) {
+    if (params.get('registered') === '1') {
         showVerificationBanner(
             'success',
-            '✅ <strong>E-mail confirmado com sucesso!</strong> Sua conta foi ativada. Digite sua senha para entrar.'
+            '✅ <strong>Cadastro realizado com sucesso!</strong> Digite seu email e senha para entrar.'
         );
-    } else if (params.get('pending_verify') === '1' && pendingEmail) {
+    } else if (params.get('verified') === '1' || hash.includes('access_token=')) {
         showVerificationBanner(
-            'info',
-            `📧 <strong>Confirme seu e-mail para liberar o login!</strong><br>Enviamos um link de confirmação para <strong>${pendingEmail}</strong>. Verifique sua caixa de entrada e spam.`,
-            pendingEmail
+            'success',
+            '✅ <strong>Conta ativada com sucesso!</strong> Digite sua senha para entrar.'
         );
     }
 
@@ -254,8 +292,8 @@ function setupRegisterForm() {
 
         try {
             await window.apiService.auth.register(email, password);
-            sessionStorage.setItem('pending_verify_email', email.toLowerCase());
-            window.location.replace('login.html?pending_verify=1');
+            sessionStorage.removeItem('pending_verify_email');
+            window.location.replace('login.html?registered=1');
         } catch (err) {
             if (emailErr) emailErr.textContent = err.message || 'Erro ao realizar cadastro.';
         } finally {
@@ -294,8 +332,11 @@ function setupRecoveryStep1() {
         }
 
         try {
-            await window.apiService.auth.forgotPassword(email);
+            const res = await window.apiService.auth.forgotPassword(email);
             sessionStorage.setItem('recovery_email', email);
+            if (res && res.message) {
+                sessionStorage.setItem('recovery_notice', res.message);
+            }
             const targetPage = pagePath.includes('recuperarsenha') ? 'codigosenha.html' : 'codigosenha.html';
             window.location.href = targetPage;
         } catch (err) {
@@ -320,6 +361,7 @@ function setupRecoveryStep2() {
     const errEl = document.getElementById('recoveryStep2Error');
     const resendBtn = document.getElementById('btnRecoveryResend');
     const recoveryEmail = sessionStorage.getItem('recovery_email') || '';
+    // O código de segurança é enviado estritamente para o e-mail do usuário
 
     if (otpInputs[0]) otpInputs[0].focus();
 
@@ -364,11 +406,12 @@ function setupRecoveryStep2() {
                 }
                 return;
             }
+            resendBtn.disabled = true;
             try {
-                const res = await window.apiService.auth.forgotPassword(recoveryEmail);
+                await window.apiService.auth.forgotPassword(recoveryEmail);
                 if (errEl) {
                     errEl.style.color = '#34d399';
-                    errEl.textContent = res.message || 'Código reenviado com sucesso!';
+                    errEl.textContent = 'Novo código enviado para seu e-mail! Verifique sua caixa de entrada e spam.';
                 }
                 otpInputs.forEach(i => { if (i) i.value = ''; });
                 if (otpInputs[0]) otpInputs[0].focus();
@@ -377,11 +420,13 @@ function setupRecoveryStep2() {
                     errEl.style.color = '#ff6b81';
                     errEl.textContent = err.message || 'Erro ao reenviar código.';
                 }
+            } finally {
+                resendBtn.disabled = false;
             }
         };
     }
 
-    form.onsubmit = (e) => {
+    form.onsubmit = async (e) => {
         e.preventDefault();
         if (errEl) {
             errEl.style.color = '';
@@ -396,9 +441,32 @@ function setupRecoveryStep2() {
             return;
         }
 
-        sessionStorage.setItem('recovery_code', code);
-        const targetPage = pagePath.includes('codigosenha') ? 'novasenha.html' : 'novasenha.html';
-        window.location.href = targetPage;
+        const submitBtn = document.getElementById('btnRecoveryStep2Submit') || form.querySelector('.button-right');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        }
+
+        try {
+            // Validar código OTP diretamente no backend antes de prosseguir para a tela de nova senha
+            if (recoveryEmail && window.apiService?.auth?.verifyResetCode) {
+                await window.apiService.auth.verifyResetCode(recoveryEmail, code);
+            }
+            sessionStorage.setItem('recovery_code', code);
+            sessionStorage.removeItem('recovery_notice');
+            const targetPage = pagePath.includes('codigosenha') ? 'novasenha.html' : 'novasenha.html';
+            window.location.href = targetPage;
+        } catch (err) {
+            if (errEl) {
+                errEl.style.color = '#ff6b81';
+                errEl.textContent = err.message || 'Código de verificação incorreto ou expirado.';
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'ENVIAR';
+            }
+        }
     };
 }
 
@@ -416,15 +484,31 @@ function setupRecoveryStep3() {
     const passErr = document.getElementById('recoveryNewPassError');
     const confirmErr = document.getElementById('recoveryConfirmPassError');
 
+    const hash = window.location.hash || '';
+    if (hash.includes('access_token=') || hash.includes('type=recovery')) {
+        // Usuário acessou diretamente pelo link do Supabase no e-mail
+        if (!sessionStorage.getItem('recovery_code')) {
+            sessionStorage.setItem('recovery_code', '1234');
+        }
+    }
+
     const storedEmail = sessionStorage.getItem('recovery_email') || '';
     const storedCode = sessionStorage.getItem('recovery_code') || '';
     if (emailInput && storedEmail) {
         emailInput.value = storedEmail;
     }
 
+    if (!storedCode && passErr) {
+        passErr.style.color = '#fbbf24';
+        passErr.textContent = 'Atenção: Nenhum código de validação detectado. Digite o código na tela anterior.';
+    }
+
     form.onsubmit = async (e) => {
         e.preventDefault();
-        if (passErr) passErr.textContent = '';
+        if (passErr) {
+            passErr.style.color = '';
+            passErr.textContent = '';
+        }
         if (confirmErr) confirmErr.textContent = '';
 
         const email = (emailInput?.value || storedEmail || '').trim();
@@ -434,6 +518,10 @@ function setupRecoveryStep3() {
         let hasError = false;
         if (!email) {
             if (passErr) passErr.textContent = 'Informe o email.';
+            hasError = true;
+        }
+        if (!storedCode) {
+            if (passErr) passErr.textContent = 'Código de verificação ausente. Inicie a recuperação novamente.';
             hasError = true;
         }
         if (newPass.length < 6) {
@@ -455,9 +543,13 @@ function setupRecoveryStep3() {
             await window.apiService.auth.resetPassword(email, storedCode, newPass);
             sessionStorage.removeItem('recovery_email');
             sessionStorage.removeItem('recovery_code');
+            sessionStorage.removeItem('recovery_notice');
             window.location.replace('login.html');
         } catch (err) {
-            if (passErr) passErr.textContent = err.message || 'Erro ao redefinir senha.';
+            if (passErr) {
+                passErr.style.color = '#ff6b81';
+                passErr.textContent = err.message || 'Erro ao redefinir senha.';
+            }
         } finally {
             if (submitBtn) {
                 submitBtn.disabled = false;

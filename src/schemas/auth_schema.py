@@ -25,7 +25,6 @@ class GoogleAuthRequest(BaseModel):
     sub: Optional[str] = Field(None, description="Google User ID")
 
 
-
 class GoogleRequestCodeRequest(BaseModel):
     email: EmailStr = Field(..., description="Email da conta Google selecionada")
     name: Optional[str] = Field(None, description="Nome de exibição da conta Google")
@@ -35,8 +34,6 @@ class GoogleVerifyCodeRequest(BaseModel):
     email: EmailStr = Field(..., description="Email da conta Google")
     code: str = Field(..., min_length=4, max_length=4, description="Código de 4 dígitos enviado ao e-mail")
     name: Optional[str] = Field(None, description="Nome da conta Google")
-
-
 
 
 class UserResponse(BaseModel):
@@ -49,7 +46,6 @@ class UserResponse(BaseModel):
     created_at: Optional[datetime] = None
 
 
-
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -58,6 +54,11 @@ class TokenResponse(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr = Field(..., description="Email para envio do código de recuperação")
+
+
+class PasswordResetVerifyRequest(BaseModel):
+    email: EmailStr = Field(..., description="Email para validação do código")
+    code: str = Field(..., min_length=4, max_length=4, description="Código de 4 dígitos")
 
 
 class PasswordResetConfirmRequest(BaseModel):
