@@ -236,33 +236,64 @@ CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000
 
 ## 🚀 Como Executar
 
-### 1. Executando o Backend (API FastAPI)
+### 1. Executando o Sistema Completo (Recomendado)
 
-Com o ambiente virtual ativo:
-```bash
-uvicorn src.api.main:app --reload --port 8000
+O ecossistema é composto por dois serviços que operam em portas distintas:
+1. **API Local de Histórico de Vendas (Porta 8001):** Serviço independente contendo o catálogo de 500 produtos e mais de 1,2 milhão de vendas diárias indexadas pelo IPCA.
+2. **TrendCommerce AI Engine (Porta 8000):** Aplicação principal com backend FastAPI, modelos de Machine Learning (XGBoost) e interface Web SPA integrada.
+
+#### Passo 1: Iniciar a API Local de Histórico de Vendas
+Execute o script em lote na raiz do projeto (ou no terminal):
+```powershell
+.\iniciar_api_vendas.bat
 ```
-*(Ou execute `python main.py`).*
+*(Ou execute: `& "c:\Users\Aluno\Downloads\API_Historico_Vendas\API_Historico_Vendas\api_vendas.exe" --port 8001`)*
 
-A API estará disponível em:
-- **API Base:** `http://localhost:8000`
-- **Swagger UI Interativo:** `http://localhost:8000/docs`
-- **ReDoc:** `http://localhost:8000/redoc`
+- **Swagger da API de Vendas:** `http://127.0.0.1:8001/docs`
+- **Health Check:** `http://127.0.0.1:8001/health`
 
-> **Nota:** No primeiro startup, o banco de dados é gerado automaticamente com dados iniciais de catálogo e o usuário administrador padrão:
+> **Nota:** Caso a API externa não seja iniciada, o TrendCommerce conta com um mecanismo automático de fallback que lê diretamente o banco SQLite local (`historico_vendas.db`), mantendo o sistema 100% operacional.
+
+#### Passo 2: Iniciar a Aplicação TrendCommerce AI
+Em outro terminal (com o ambiente virtual ativo):
+```powershell
+python main.py
+```
+*(Ou execute: `uvicorn src.api.main:app --reload --port 8000`)*
+
+Acesse no navegador:
+- 🌐 **Dashboard & Frontend Integrado:** **`http://localhost:8000/app`** (ou `http://localhost:8000/`)
+- 📖 **Documentação Swagger (Swagger UI):** `http://localhost:8000/docs`
+- 📑 **Documentação ReDoc:** `http://localhost:8000/redoc`
+
+> **Credenciais de Acesso Padrão (Ambiente Local):**
 > - **Usuário:** `admin@trendecommerce.com`
 > - **Senha:** `admin123`
 
 ---
 
-### 2. Executando o Frontend
+### 2. Gerenciamento e Sincronização do Banco de Dados
 
-Em outro terminal (com o ambiente virtual ativo):
-```bash
+Para consultar o status do catálogo ou recriar o banco zerado e sincronizado com os dados da API de Vendas:
+
+- **Ver total de produtos e vendas no banco:**
+  ```powershell
+  python -m src.database.setup status
+  ```
+- **Resetar e repovoar catálogo e vendas a partir da API oficial:**
+  ```powershell
+  python -m src.database.setup reset
+  ```
+
+---
+
+### 3. Executando o Frontend de Forma Isolada (Opcional)
+
+Caso deseje desenvolver o frontend separadamente em uma porta dedicada:
+```powershell
 python frontend/server.py
 ```
-Acesse a aplicação no navegador em:
-👉 **`http://localhost:3000`**
+Acesse em: 👉 **`http://localhost:3000`**
 
 ---
 
@@ -274,7 +305,12 @@ Acesse a aplicação no navegador em:
 | `POST` | `/api/v1/auth/register` | Cadastro de nova conta |
 | `GET` | `/api/v1/auth/me` | Dados do usuário autenticado |
 | `GET` | `/api/v1/products` | Listagem paginada de produtos do catálogo |
-| `POST` | `/api/v1/products/discover-live` | Descoberta e captura de produtos em tempo real |
+| `GET` | `/api/v1/products/categories` | Lista de categorias ativas no sistema |
+| `GET` | `/api/v1/products/api-status` | Status de conexão e integridade da API de Vendas |
+| `POST` | `/api/v1/products/sync-categories` | Sincronização massiva de catálogo e vendas da API oficial |
+| `GET` | `/api/v1/products/top-sales` | Ranking dos produtos mais vendidos por volume e receita |
+| `GET` | `/api/v1/products/autocomplete` | Autocompletar e sugestões em tempo real |
+| `POST` | `/api/v1/products/discover-live` | Busca de produtos no catálogo com histórico |
 | `POST` | `/api/v1/forecast/predict` | Projeção preditiva (7, 14 ou 30 dias) com explicabilidade |
 | `GET` | `/api/v1/forecast/ranking` | Ranking Top 7 geral e Top 5 por categoria |
 | `POST` | `/api/v1/forecast/compare` | Comparativo preditivo direto entre dois produtos |

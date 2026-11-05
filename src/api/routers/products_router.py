@@ -1,3 +1,5 @@
+import difflib
+import unicodedata
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db
 from src.database.models import Product, SalesHistory
+from src.services.vendas_api_client import vendas_client
 from src.schemas.product_schema import (
     ProductResponse,
     ProductDetailResponse,
@@ -42,32 +45,25 @@ def list_products(
     if platform:
         query = query.filter(Product.platform == platform)
 
-    total = query.count()
-    offset = (page - 1) * limit
-    products = query.order_by(Product.id).offset(offset).limit(limit).all()
+    total_items = query.count()
+    total_pages = (total_items + limit - 1) // limit
 
-    # Agregar totais de venda por produto nos últimos 30 dias (vendas do mês)
-    product_ids = [p.id for p in products]
-    sales_map = {}
-    if product_ids:
-        latest_date = db.query(func.max(SalesHistory.date)).scalar()
-        sales_q = db.query(
-            SalesHistory.product_id,
-            func.sum(SalesHistory.quantity_sold).label("total_units"),
-            func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, 100.0)).label("total_rev")
-        ).filter(SalesHistory.product_id.in_(product_ids))
-
-        if latest_date:
-            sales_q = sales_q.filter(SalesHistory.date >= latest_date - timedelta(days=30))
-
-        sales_aggs = sales_q.group_by(SalesHistory.product_id).all()
-        for s_pid, s_units, s_rev in sales_aggs:
-            sales_map[s_pid] = (int(s_units or 0), float(s_rev or 0.0))
+    products = query.order_by(Product.id.asc())\
+                    .offset((page - 1) * limit)\
+                    .limit(limit)\
+                    .all()
 
     items = []
     for prod in products:
-        total_units, total_rev = sales_map.get(prod.id, (0, 0.0))
-        item = ProductResponse(
+        sales_agg = db.query(
+            func.sum(SalesHistory.quantity_sold).label("total_units"),
+            func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, prod.price or 0.0)).label("total_rev")
+        ).filter(SalesHistory.product_id == prod.id).first()
+
+        total_units = int(sales_agg.total_units or 0)
+        total_rev = float(sales_agg.total_rev or 0.0)
+
+        items.append(ProductResponse(
             id=prod.id,
             external_id=prod.external_id,
             platform=prod.platform,
@@ -82,46 +78,56 @@ def list_products(
             created_at=prod.created_at,
             total_sold_units=total_units,
             total_revenue=round(total_rev, 2)
-        )
-        items.append(item)
-
-    pages = (total + limit - 1) // limit if total > 0 else 1
+        ))
 
     return ProductListResponse(
-        total=total,
+        items=items,
+        total=total_items,
         page=page,
         limit=limit,
-        pages=pages,
-        items=items
+        pages=total_pages
     )
 
 
-@router.get("/categories", response_model=List[str], summary="Listar categorias de produtos")
+@router.get("/categories", response_model=List[str], summary="Listar todas as categorias com produtos cadastrados")
 def get_categories(db: Session = Depends(get_db)):
-    """Retorna lista de categorias cadastradas na base."""
-    categories = db.query(Product.category).filter(Product.category.isnot(None), Product.is_active.is_(True)).distinct().all()
+    """Retorna a lista de categorias disponíveis no sistema e na API de Vendas."""
+    categories = db.query(Product.category).filter(
+        Product.category.isnot(None), 
+        Product.is_active.is_(True)
+    ).distinct().order_by(Product.category).all()
     unique_cats = sorted(list({c[0] for c in categories if c[0]}))
-    return unique_cats if unique_cats else ["Geral", "Tecnologia", "Moda", "Casa e Móveis"]
+    if unique_cats:
+        return unique_cats
+    api_cats = vendas_client.get_categorias()
+    return api_cats if api_cats else ["Geral", "Eletrônicos", "Moda e acessórios", "Casa e decoração", "Esportes e fitness", "Beleza e cuidados pessoais"]
 
 
-@router.get("/top-sales", response_model=List[TopProductItem], summary="Ranking dos produtos mais vendidos no mês")
-def get_top_selling_products(
-    limit: int = Query(10, ge=1, le=50, description="Quantidade de produtos no ranking"),
-    category: Optional[str] = Query(None, description="Filtro opcional de categoria"),
-    days: int = Query(30, ge=1, le=365, description="Janela de dias para apuração de vendas (padrão: 30 dias)"),
+@router.get("/api-status", summary="Verificar status de conexão com a API de Histórico de Vendas")
+def get_vendas_api_status():
+    """Retorna a saúde e status de conexão com a API externa fornecida pelo professor."""
+    return vendas_client.get_health()
+
+
+@router.get("/top-sales", response_model=List[TopProductItem], summary="Produtos mais vendidos com ranking")
+def get_top_sales(
+    limit: int = Query(10, ge=1, le=50, description="Quantidade de produtos"),
+    category: Optional[str] = Query(None, description="Filtrar por categoria"),
+    days: int = Query(30, ge=1, le=3650, description="Janela de dias históricos para o cálculo (padrão: 30 dias do mês)"),
     db: Session = Depends(get_db)
 ):
-    """Retorna os produtos com maior volume de vendas apuradas no período."""
+    """Calcula os produtos campeões de vendas no período (últimos 30 dias / mês)."""
     latest_date = db.query(func.max(SalesHistory.date)).scalar()
 
     query = db.query(
-        Product.id,
+        SalesHistory.product_id,
         Product.title,
         Product.category,
         Product.price,
         func.sum(SalesHistory.quantity_sold).label("total_sold"),
-        func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, Product.price)).label("total_revenue")
-    ).join(SalesHistory, Product.id == SalesHistory.product_id)
+        func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, Product.price, 0.0)).label("total_revenue")
+    ).join(Product, Product.id == SalesHistory.product_id)\
+     .filter(Product.is_active.is_(True))
 
     if latest_date and days > 0:
         start_date = latest_date - timedelta(days=days)
@@ -129,50 +135,96 @@ def get_top_selling_products(
 
     if category and category.strip().upper() not in ["GERAIS", "GERAL", "TODAS", "TODOS"]:
         query = query.filter(Product.category == category.strip())
-        results = query.group_by(Product.id, Product.title, Product.category, Product.price)\
-                       .order_by(desc("total_sold"))\
-                       .limit(limit)\
-                       .all()
 
-        items = []
-        for rank, (p_id, title, cat, price, total_sold, total_rev) in enumerate(results, start=1):
-            items.append(TopProductItem(
-                rank=rank,
-                id=p_id,
-                title=title,
-                category=cat or "Geral",
-                price=float(price or 0.0),
-                quantity_sold=int(total_sold or 0),
-                revenue=round(float(total_rev or 0.0), 2)
-            ))
-        return items
+    results = query.group_by(SalesHistory.product_id, Product.title, Product.category, Product.price)\
+                   .order_by(desc("total_sold"))\
+                   .limit(limit)\
+                   .all()
 
-    # Modo GERAIS: Seleciona o Top 1 mais vendido de cada nicho/categoria
-    all_results = query.group_by(Product.id, Product.title, Product.category, Product.price)\
-                       .order_by(desc("total_sold"))\
-                       .all()
-
-    seen_cats = set()
     items = []
-    rank = 1
-    for p_id, title, cat, price, total_sold, total_rev in all_results:
-        clean_cat = cat or "Geral"
-        if clean_cat not in seen_cats:
-            seen_cats.add(clean_cat)
-            items.append(TopProductItem(
-                rank=rank,
-                id=p_id,
-                title=title,
-                category=clean_cat,
-                price=float(price or 0.0),
-                quantity_sold=int(total_sold or 0),
-                revenue=round(float(total_rev or 0.0), 2)
-            ))
-            rank += 1
-            if len(items) >= limit:
-                break
+    for rank, r in enumerate(results, start=1):
+        items.append(TopProductItem(
+            id=r[0],
+            title=r[1],
+            category=r[2] or "Geral",
+            price=float(r[3] or 0.0),
+            quantity_sold=int(r[4] or 0),
+            revenue=round(float(r[5] or 0.0), 2),
+            rank=rank
+        ))
 
     return items
+
+
+def _strip_accents(s: str) -> str:
+    return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
+
+
+def search_catalog_products(q: str, db: Session, limit: int = 8) -> List[Product]:
+    """Busca produtos no catálogo oficial por correspondência exata, palavras-chave ou similaridade de caracteres."""
+    q_str = q.strip()
+    if not q_str:
+        return []
+
+    q_norm = _strip_accents(q_str)
+    q_tokens = [w for w in q_norm.split() if len(w) >= 2]
+    if not q_tokens:
+        q_tokens = [q_norm]
+
+    # 1. Correspondência direta via SQL (rápida)
+    direct_query = db.query(Product).filter(
+        Product.is_active.is_(True),
+        (Product.title.ilike(f"%{q_str}%")) | (Product.category.ilike(f"%{q_str}%"))
+    ).limit(limit).all()
+
+    if len(direct_query) >= limit:
+        return direct_query
+
+    # 2. Ranqueamento por similaridade de caracteres contra produtos ativos
+    all_active = db.query(Product).filter(Product.is_active.is_(True)).all()
+    seen_ids = {p.id for p in direct_query}
+    scored = [(2.0, p) for p in direct_query]
+
+    for p in all_active:
+        if p.id in seen_ids:
+            continue
+
+        p_title_norm = _strip_accents(p.title)
+        p_tokens = [w for w in p_title_norm.split() if len(w) >= 2]
+
+        # Frase completa no título
+        if q_norm in p_title_norm:
+            score = 2.0 + (len(q_norm) / max(len(p_title_norm), 1))
+            scored.append((score, p))
+            seen_ids.add(p.id)
+            continue
+
+        # Similaridade termo a termo / caracteres parecidos
+        token_sims = []
+        for qt in q_tokens:
+            best_sim = 0.0
+            for pt in p_tokens:
+                if qt == pt:
+                    sim = 1.0
+                elif len(qt) >= 4 and len(pt) >= 4 and (qt in pt or pt in qt):
+                    sim = len(qt) / len(pt) if len(qt) < len(pt) else len(pt) / len(qt)
+                else:
+                    sim = difflib.SequenceMatcher(None, qt, pt).ratio()
+                if sim > best_sim:
+                    best_sim = sim
+            token_sims.append(best_sim)
+
+        max_sim = max(token_sims) if token_sims else 0.0
+        strong_matches = [s for s in token_sims if s >= 0.70]
+
+        if strong_matches:
+            score = (max_sim * 0.6) + ((sum(strong_matches) / len(q_tokens)) * 0.4)
+            if score >= 0.50:
+                scored.append((score, p))
+                seen_ids.add(p.id)
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [p for _, p in scored[:limit]]
 
 
 class AutocompleteItem(BaseModel):
@@ -180,33 +232,37 @@ class AutocompleteItem(BaseModel):
     title: str
     category: str
     price: float
-    platform: str = "ecommerce"
+    platform: str = "api_vendas"
     is_live_suggestion: bool = False
 
 
-@router.get("/autocomplete", response_model=List[AutocompleteItem], summary="Autocompletar de produtos")
+@router.get("/autocomplete", response_model=List[AutocompleteItem], summary="Autocompletar produtos do catálogo")
 def autocomplete_products(
     q: str = Query(..., min_length=1, description="Termo de pesquisa"),
     limit: int = Query(8, ge=1, le=20, description="Quantidade máxima de recomendações"),
     db: Session = Depends(get_db)
 ):
-    """Retorna sugestões de produtos a partir da base de dados interna."""
-    query = f"%{q.strip()}%"
-    prods = db.query(Product).filter(
-        (Product.title.ilike(query)) | (Product.category.ilike(query)),
-        Product.is_active.is_(True)
-    ).limit(limit).all()
+    """Retorna sugestões do catálogo cadastrado com correspondência exata ou caracteres parecidos."""
+    q_str = q.strip()
+    prohibited = {
+        "maconha", "cannabis", "cocaina", "crack", "lsd", "ecstasy", "mdma", "heroina", 
+        "entorpecente", "droga", "drogas", "ozempic", "anabolizante", "anabolizantes", 
+        "rivotril", "zolpidem", "ritalina", "venvanse", "vape", "vapes", "cigarro", "arma"
+    }
+    if any(p in q_str.lower() for p in prohibited):
+        return []
 
+    matched = search_catalog_products(q_str, db, limit=limit)
     return [
         AutocompleteItem(
             id=p.id,
             title=p.title,
             category=p.category or "Geral",
             price=p.price or 0.0,
-            platform=p.platform or "ecommerce",
+            platform=p.platform,
             is_live_suggestion=False
         )
-        for p in prods
+        for p in matched
     ]
 
 
@@ -266,7 +322,7 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 @router.get("/{product_id}/history", response_model=List[SalesHistoryResponse], summary="Obter série temporal de vendas")
 def get_product_sales_history(
     product_id: int,
-    days: int = Query(30, ge=7, le=365, description="Quantidade de dias históricos"),
+    days: int = Query(30, ge=7, le=1000, description="Quantidade de dias históricos"),
     db: Session = Depends(get_db)
 ):
     """Retorna os dados cronológicos de vendas para alimentação de gráficos no frontend."""
@@ -294,6 +350,103 @@ def get_product_sales_history(
             revenue=round(s.quantity_sold * price, 2)
         ))
     return history
+
+
+class DiscoverLiveRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+
+class DiscoverLiveResponse(BaseModel):
+    query: str
+    total_found: int
+    products: List[ProductResponse]
+    message: str
+
+
+@router.post("/discover-live", response_model=DiscoverLiveResponse, summary="Buscar produtos no catálogo oficial")
+def discover_live_products(
+    request: DiscoverLiveRequest,
+    db: Session = Depends(get_db)
+):
+    """Localiza produtos por termo ou caracteres similares no catálogo oficial."""
+    query_str = request.query.strip()
+    if not query_str:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Informe um termo de busca.")
+
+    matched_prods = search_catalog_products(query_str, db, limit=request.limit)
+
+    if not matched_prods:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Produto '{query_str}' não encontrado no catálogo."
+        )
+
+    items = []
+    for prod in matched_prods:
+        sales_agg = db.query(
+            func.sum(SalesHistory.quantity_sold).label("total_units"),
+            func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, prod.price or 0.0)).label("total_rev")
+        ).filter(SalesHistory.product_id == prod.id).first()
+
+        total_units = int(sales_agg.total_units or 0)
+        total_rev = float(sales_agg.total_rev or 0.0)
+
+        items.append(ProductResponse(
+            id=prod.id,
+            external_id=prod.external_id,
+            platform=prod.platform,
+            title=prod.title,
+            category=prod.category,
+            price=prod.price,
+            currency=prod.currency,
+            condition=prod.condition,
+            url=prod.url,
+            attributes=prod.attributes,
+            is_active=prod.is_active,
+            created_at=prod.created_at,
+            total_sold_units=total_units,
+            total_revenue=round(total_rev, 2)
+        ))
+
+    return DiscoverLiveResponse(
+        query=query_str,
+        total_found=len(items),
+        products=items,
+        message=f"{len(items)} produto(s) encontrado(s) no catálogo."
+    )
+
+
+class SyncCategoriesResponse(BaseModel):
+    status: str
+    total_synced_products: int
+    total_sales: int
+    sample_products: List[str]
+    message: str
+
+
+@router.post("/sync-categories", response_model=SyncCategoriesResponse, summary="Sincronizar dados da API de Histórico de Vendas")
+def sync_vendas_api_endpoint(
+    min_date: str = Query("2024-01-01", description="Data inicial do histórico a importar (YYYY-MM-DD)"),
+    db: Session = Depends(get_db)
+):
+    """Sincroniza o catálogo de produtos e séries de vendas da API do professor."""
+    result = vendas_client.sync_to_trendecommerce(db, min_date=min_date)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Falha ao sincronizar com a API de Vendas: {result.get('error')}"
+        )
+
+    samples = [p.title for p in db.query(Product).limit(5).all()]
+
+    return SyncCategoriesResponse(
+        status="success",
+        total_synced_products=result["total_products"],
+        total_sales=result["total_sales"],
+        sample_products=samples,
+        message=f"{result['total_products']} produtos e {result['total_sales']:,} registros de vendas sincronizados com sucesso!"
+    )
 
 
 class CreateProductRequest(BaseModel):

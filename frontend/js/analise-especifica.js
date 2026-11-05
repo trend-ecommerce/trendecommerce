@@ -125,21 +125,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.showDropdown = true;
         searchDropdown.style.display = 'block';
 
+        if (!items || items.length === 0) {
+            searchDropdown.innerHTML = `
+                <div class="search-item search-item-empty" style="padding: 12px 16px; color: #8da2bd; font-style: italic; cursor: default; user-select: none;">
+                    Produto não encontrado no catálogo.
+                </div>
+            `;
+            return;
+        }
+
         let html = items.map(prod => `
             <div class="search-item" data-id="${prod.id || ''}" data-title="${prod.title}">
                 <span class="search-item-title">${prod.title}</span>
                 <span class="search-item-price">R$ ${Number(prod.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
             </div>
         `).join('');
-
-        if (query.trim().length > 0) {
-            html += `
-                <div class="search-item-live-sync" id="btnDropdownLiveSync" style="padding: 12px 16px; border-top: 1px solid rgba(0, 212, 255, 0.25); background: linear-gradient(90deg, rgba(0, 212, 255, 0.12), rgba(0, 114, 255, 0.08)); color: #00f0ff; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 10px;">
-                    <span>⚡</span>
-                    <span>${state.discovering ? 'Buscando nas APIs...' : `Buscar "${query}" em tempo real na Amazon & Mercado Livre`}</span>
-                </div>
-            `;
-        }
 
         searchDropdown.innerHTML = html;
 
@@ -153,11 +153,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             };
         });
-
-        const syncBtn = document.getElementById('btnDropdownLiveSync');
-        if (syncBtn) {
-            syncBtn.onclick = () => handleLiveDiscovery(query);
-        }
     }
 
     function selectProduct(prod) {
@@ -178,8 +173,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!q || !q.trim()) return;
 
         state.discovering = true;
-        window.showToast?.(`Buscando "${q.trim()}" em tempo real na Amazon e Mercado Livre...`, 'info', 4000);
-
         try {
             const res = await window.apiService.products.discoverLive(q.trim(), 5);
             if (res && res.products && res.products.length > 0) {
@@ -188,17 +181,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (searchInput) searchInput.value = first.title;
                 if (searchDropdown) searchDropdown.style.display = 'none';
 
-                window.showToast?.(`${res.total_found} produto(s) sincronizados com sucesso!`, 'success', 5000);
+                window.showToast?.(`Produto selecionado: ${first.title}`, 'success', 3500);
                 runForecast(first.id, state.horizonDays);
             } else {
-                window.showToast?.('Produto não localizado ou sem comercialização ativa no Mercado Livre / Amazon.', 'warning', 6000);
+                window.showToast?.('Produto não encontrado no catálogo.', 'warning', 5000);
             }
         } catch (err) {
             const msg = err.message || '';
-            if (msg.includes('não localizado') || msg.includes('restritos') || msg.includes('404')) {
-                window.showToast?.('⚠️ Produto não localizado ou sem comercialização ativa no Mercado Livre / Amazon (itens proibidos ou sem catálogo oficial).', 'warning', 7000);
+            if (msg.includes('não encontrado') || msg.includes('404')) {
+                window.showToast?.('Produto não encontrado no catálogo.', 'warning', 5000);
             } else {
-                window.showToast?.('Erro na busca em tempo real: ' + msg, 'error');
+                window.showToast?.('Erro ao consultar catálogo: ' + msg, 'error');
             }
         } finally {
             state.discovering = false;

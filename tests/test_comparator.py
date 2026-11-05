@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from src.ml.comparator import DemandComparator, ValidationReport, ValidationRow
 from src.database.connection import DatabaseManager
-from src.database.models import Base, Product, SalesHistory, PredictionLog
+from src.database.models import Base, Product, SalesHistory
 
 
 @pytest.fixture

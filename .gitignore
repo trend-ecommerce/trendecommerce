@@ -36,8 +36,10 @@ htmlcov/
 
 # Databases
 *.db
-*.sqlite3
 *.db.bak
+*.sqlite3
+data/*.db
+data/*.db.bak
 !data/initial_seed.json
 
 # Models

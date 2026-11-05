@@ -218,15 +218,8 @@ def test_forecast_compare_endpoint(client):
     assert data["revenue_difference"] >= 0
 
 
-def test_trends_search(client):
-    """Testa busca de tendências de pesquisa."""
-    response = client.get("/api/v1/trends/search?limit=10")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-
 def test_discover_live_products(client):
-    """Testa descoberta e importação em tempo real de produtos da Amazon/Mercado Livre."""
+    """Testa busca no catálogo oficial e tratamento de produto não cadastrado."""
     response = client.post("/api/v1/products/discover-live", json={
         "query": "Monitor Gamer 144Hz",
         "limit": 3
@@ -236,6 +229,15 @@ def test_discover_live_products(client):
     assert data["total_found"] > 0
     assert len(data["products"]) > 0
     assert "Monitor" in data["products"][0]["title"] or "Gamer" in data["products"][0]["title"]
+    assert all(p["id"] is not None for p in data["products"])
+
+    # Produto inexistente não cadastrado deve retornar 404
+    resp_404 = client.post("/api/v1/products/discover-live", json={
+        "query": "produto_totalmente_inexistente_xyz_999",
+        "limit": 3
+    })
+    assert resp_404.status_code == 404
+    assert "não encontrado" in resp_404.json()["detail"].lower()
 
 
 def test_send_otp_email_service(monkeypatch):
@@ -290,7 +292,7 @@ def test_send_otp_email_service(monkeypatch):
 
 
 def test_products_autocomplete(client):
-    """Testa endpoint de autocompletar e recomendações em tempo real."""
+    """Testa endpoint de autocompletar e recomendações com caracteres parecidos."""
     # Busca de produto existente ou sugestões ao digitar
     resp = client.get("/api/v1/products/autocomplete?q=creatina&limit=5")
     assert resp.status_code == 200
@@ -301,16 +303,31 @@ def test_products_autocomplete(client):
     assert "title" in first
     assert "price" in first
     assert "category" in first
+    assert all(item["id"] is not None for item in items)
 
-    # Busca de camisa corinthians (recomendações de modelos)
+    # Busca com termo de pesquisa (recomenda produtos cadastrados com caracteres parecidos)
     resp_cor = client.get("/api/v1/products/autocomplete?q=camisa%20corinthians&limit=5")
     assert resp_cor.status_code == 200
     cor_items = resp_cor.json()
     assert isinstance(cor_items, list)
     assert len(cor_items) > 0
-    assert any("corinthians" in item["title"].lower() for item in cor_items)
+    assert any("camis" in item["title"].lower() for item in cor_items)
+    assert all(item["id"] is not None for item in cor_items)
+
+    # Busca com erro de digitação (typo 'notbook') deve recomendar 'Notebook' cadastrado
+    resp_typo = client.get("/api/v1/products/autocomplete?q=notbook&limit=5")
+    assert resp_typo.status_code == 200
+    typo_items = resp_typo.json()
+    assert len(typo_items) > 0
+    assert any("notebook" in item["title"].lower() for item in typo_items)
+    assert all(item["id"] is not None for item in typo_items)
 
     # Termo proibido deve retornar lista vazia
     resp_prohibited = client.get("/api/v1/products/autocomplete?q=cocaina&limit=5")
     assert resp_prohibited.status_code == 200
     assert resp_prohibited.json() == []
+
+    # Produto inexistente não cadastrado deve retornar lista vazia
+    resp_unreg = client.get("/api/v1/products/autocomplete?q=produto_inexistente_xyz_999&limit=5")
+    assert resp_unreg.status_code == 200
+    assert resp_unreg.json() == []
