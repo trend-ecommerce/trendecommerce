@@ -186,6 +186,13 @@ class ApiService {
             });
         },
 
+        verifyResetCode: async (email, code) => {
+            return await this.request('/auth/verify-reset-code', {
+                method: 'POST',
+                body: JSON.stringify({ email, code })
+            });
+        },
+
         resetPassword: async (email, code, new_password) => {
             return await this.request('/auth/reset-password', {
                 method: 'POST',

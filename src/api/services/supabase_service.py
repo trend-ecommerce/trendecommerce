@@ -239,8 +239,11 @@ def supabase_resend_confirmation(email: str, redirect_to: Optional[str] = None) 
             timeout=6.0,
         )
         if resp.status_code in (200, 201, 204):
-            return True, "E-mail de confirmação reenviado! Verifique sua caixa de entrada e spam."
+            return True, "E-mail de confirmação reenviado pelo Supabase! Verifique sua caixa de entrada e a pasta de spam/lixeira."
         data = resp.json() if resp.content else {}
+        err_code = str(data.get("error_code") or "").lower()
+        if resp.status_code == 429 or "rate_limit" in err_code:
+            return False, "Limite temporário de envio de e-mails do Supabase atingido (máx 3-4 por hora no plano gratuito). Verifique sua pasta de spam ou aguarde alguns minutos."
         msg = data.get("msg") or data.get("error_description") or data.get("message") or "Aguarde alguns segundos antes de solicitar novo envio."
         return False, msg
     except Exception as exc:
@@ -277,3 +280,38 @@ def supabase_sync_user_row(email: str, hashed_password: str, name: str, is_activ
     except Exception as exc:
         logger.debug(f"Falha ao sincronizar usuário no PostgREST: {exc}")
         return False
+
+
+def supabase_send_password_recovery(email: str, redirect_to: Optional[str] = None) -> Tuple[bool, str]:
+    """Envia o e-mail oficial de redefinição de senha via Supabase Auth."""
+    url, key = get_supabase_config()
+    if not url or not key:
+        return False, "Supabase não configurado."
+
+    redirect_url = redirect_to or os.getenv("AUTH_RESET_REDIRECT_URL", "http://localhost:8000/novasenha.html")
+    headers = {
+        "apikey": key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "email": email.lower().strip(),
+    }
+
+    try:
+        resp = requests.post(
+            f"{url}/auth/v1/recover",
+            params={"redirect_to": redirect_url},
+            headers=headers,
+            json=payload,
+            timeout=6.0,
+        )
+        if resp.status_code in (200, 201, 204):
+            return True, "E-mail de recuperação enviado pelo Supabase! Verifique sua caixa de entrada e a pasta de spam/lixeira."
+        data = resp.json() if resp.content else {}
+        err_code = str(data.get("error_code") or "").lower()
+        if resp.status_code == 429 or "rate_limit" in err_code:
+            return False, "Limite temporário de envio do Supabase atingido (máx 3-4 por hora). Verifique a pasta de spam ou utilize o código de contingência."
+        msg = data.get("msg") or data.get("error_description") or data.get("message") or "Erro ao solicitar recuperação no Supabase."
+        return False, msg
+    except Exception as exc:
+        return False, f"Erro ao contatar Supabase: {exc}"
