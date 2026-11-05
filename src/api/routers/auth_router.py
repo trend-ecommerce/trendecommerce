@@ -197,7 +197,7 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
             user=UserResponse.model_validate(user)
         )
 
-    # 1. Se o usuário já existe no banco local, valida a senha diretamente
+    # 1. Se o usuario ja existe no banco local, valida a senha diretamente
     if user:
         if not verify_password(credentials.password, user.hashed_password):
             _login_attempts[email_key].append(now)
@@ -220,7 +220,7 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
             user=UserResponse.model_validate(user)
         )
 
-    # 2. Se o usuário não existe no banco local, consulta o Supabase Auth
+    # 2. Se o usuario nao existe no banco local, consulta o Supabase Auth
     sb_status, sb_data = supabase_sign_in(email_key, credentials.password)
 
     if sb_status in ("confirmed", "unconfirmed"):
