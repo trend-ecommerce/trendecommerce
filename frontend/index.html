@@ -1,102 +1,61 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrendCommerce AI - Sistema Preditivo de Vendas e Inteligência de Dados</title>
+    <title>TrendEcommerce AI</title>
     <link rel="icon" type="image/png" href="assets/logo.png">
     
     <script>
-        // Se já autenticado, redireciona diretamente para o dashboard
         if (localStorage.getItem('trendecommerce_token')) {
             window.location.replace('ia-preditiva.html');
         }
     </script>
 
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Phosphor Icons -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-
-    <!-- CSS Stylesheets -->
-    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/login.css">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
-<body class="auth-mode">
-    <div id="appRoot" class="app-root auth-view">
-        <div id="toast-container" class="toast-container" aria-live="polite"></div>
+<body>
+    <div class="logo">
+        <img src="assets/logo.png" alt="Logo da Empresa">
+    </div>
+    <div class="login-pai">
+        <div class="login-container">
+            <form class="login-right" id="formLogin" novalidate>
+                <h1>EMAIL:</h1>
+                <input class="login-input" type="email" id="loginEmail" placeholder="Digite seu email..." required autocomplete="email">
+                <span id="loginEmailError" class="login-field-error"></span>
 
-        <div class="auth-root-wrapper">
-            <div class="logo logo-header">
-                <img src="assets/logo.png" alt="TrendCommerce Logo" class="logo-img">
-            </div>
-
-            <div class="login-pai">
-                <div class="login-container">
-                    <!-- Painel Esquerdo -->
-                    <div class="login-left">
-                        <h1>BEM-VINDO<br>DE VOLTA!</h1>
-                        <a href="cadastro.html" class="login-button" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none;">
-                            CADASTRAR
-                        </a>
-                    </div>
-
-                    <!-- Painel Direito: Formulário de Login -->
-                    <div class="login-right">
-                        <form id="formLogin" class="login-form-content" noValidate>
-                            <h1>EMAIL:</h1>
-                            <input
-                                type="email"
-                                id="loginEmail"
-                                class="login-input"
-                                placeholder="Digite seu email..."
-                                required
-                                autocomplete="email"
-                            >
-                            <span id="loginEmailError" class="login-field-error"></span>
-
-                            <h1>SENHA:</h1>
-                            <div class="password-container">
-                                <input
-                                    type="password"
-                                    id="loginPassword"
-                                    class="login-input"
-                                    placeholder="Digite sua senha..."
-                                    required
-                                    autocomplete="current-password"
-                                >
-                                <button type="button" id="toggleSenha" aria-label="Mostrar ou ocultar senha">
-                                    <i class="ph ph-eye"></i>
-                                </button>
-                            </div>
-                            <span id="loginPasswordError" class="login-field-error"></span>
-
-                            <button type="submit" id="btnLoginSubmit" class="button-right">
-                                ENTRAR
-                            </button>
-
-                            <div id="coldStartNotice" style="display: none; margin-top: 12px; padding: 8px 12px; background: rgba(0, 240, 255, 0.08); border: 1px solid rgba(0, 240, 255, 0.25); border-radius: 8px; color: #00f0ff; font-size: 11px; line-height: 1.4; text-align: center;">
-                                <i class="ph ph-lightning" style="margin-right: 4px;"></i>
-                                Conectando ao servidor em nuvem... Isso pode levar alguns instantes na primeira inicialização.
-                            </div>
-
-                            <a href="recuperar-senha.html" class="login-span" style="text-decoration: none;">
-                                Esqueceu sua senha?<br>Clique aqui.
-                            </a>
-                        </form>
-                    </div>
+                <h1>SENHA:</h1>
+                <div class="password-container">
+                    <input class="login-input" type="password" id="senha" placeholder="Digite sua senha..." required autocomplete="current-password">
+                    <button type="button" id="toggleSenha"><i class="ph ph-eye"></i></button>
                 </div>
+                <span id="loginPasswordError" class="login-field-error"></span>
+
+                <button type="submit" id="btnLoginSubmit" class="button-right">ENTRAR</button>
+
+                <div id="coldStartNotice" style="display: none; margin-top: 8px; padding: 6px 12px; background: rgba(0, 174, 239, 0.15); border: 1px solid rgba(0, 174, 239, 0.3); border-radius: 8px; color: #00d4ff; font-size: 11px; text-align: center;">
+                    <i class="ph ph-lightning"></i> Conectando ao servidor... Aguarde um momento.
+                </div>
+
+                <span class="login-span" onclick="window.location.href='recuperarsenha.html'">Esqueceu sua senha?<br>Clique aqui.</span>
+            </form>
+            <div class="login-left">
+                <h1>BEM-VINDO<br>DE VOLTA!</h1>
+                <button type="button" class="login-button" onclick="window.location.href='cadastro.html'">CADASTRAR</button>
             </div>
         </div>
-
     </div>
+        
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-    <!-- Scripts -->
     <script src="js/api.js"></script>
     <script src="js/toast.js"></script>
     <script src="js/auth.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 /**
  * TrendCommerce AI - Multi-Page Auth Controller
- * Gerencia formulários em login.html, cadastro.html, recuperar-senha.html,
- * codigo-verificacao.html e nova-senha.html.
+ * Gerencia autenticação em login.html, cadastro.html, recuperarsenha.html / recuperar-senha.html,
+ * codigosenha.html / codigo-verificacao.html e novasenha.html / nova-senha.html.
  */
 
 const BLOCKED_DOMAINS_CLIENT = new Set([
@@ -52,7 +52,8 @@ function setupPasswordToggles() {
     document.querySelectorAll('.password-container').forEach(container => {
         const input = container.querySelector('input');
         const btn = container.querySelector('button');
-        if (input && btn) {
+        if (input && btn && !btn.dataset.toggleInitialized) {
+            btn.dataset.toggleInitialized = 'true';
             btn.onclick = (e) => {
                 e.preventDefault();
                 const isPass = input.type === 'password';
@@ -68,19 +69,22 @@ function setupPasswordToggles() {
 
 // 1. Login
 function setupLoginForm() {
-    const form = document.getElementById('formLogin');
-    if (!form) return;
+    const form = document.getElementById('formLogin') || document.querySelector('.login-right');
+    // Apenas executa se for página de login
+    const pagePath = window.location.pathname.toLowerCase();
+    const isLoginPage = pagePath.endsWith('login.html') || (!pagePath.includes('cadastro') && !pagePath.includes('recuperar') && !pagePath.includes('codigo') && !pagePath.includes('nova') && document.getElementById('formLogin'));
+    if (!form || !isLoginPage) return;
 
-    const emailInput = document.getElementById('loginEmail');
-    const passInput = document.getElementById('loginPassword');
-    const submitBtn = document.getElementById('btnLoginSubmit');
+    const emailInput = document.getElementById('loginEmail') || form.querySelector('input[type="email"]');
+    const passInput = document.getElementById('loginPassword') || document.getElementById('senha') || form.querySelector('input[type="password"]');
+    const submitBtn = document.getElementById('btnLoginSubmit') || form.querySelector('.button-right');
     const emailErr = document.getElementById('loginEmailError');
     const passErr = document.getElementById('loginPasswordError');
     const coldStartNotice = document.getElementById('coldStartNotice');
 
     // Criar banner de verificação de e-mail se necessário
     let verifyBanner = document.getElementById('emailVerificationBanner');
-    if (!verifyBanner) {
+    if (!verifyBanner && submitBtn) {
         verifyBanner = document.createElement('div');
         verifyBanner.id = 'emailVerificationBanner';
         verifyBanner.style.cssText = 'display: none; width: 100%; margin-top: 10px; padding: 10px 14px; border-radius: 12px; font-size: 12px; line-height: 1.45; text-align: center;';
@@ -156,16 +160,20 @@ function setupLoginForm() {
         const emailCheck = validateRealEmailClient(email);
         if (!emailCheck.valid) {
             if (emailErr) emailErr.textContent = emailCheck.message;
+            window.showToast?.(emailCheck.message, 'error');
             hasError = true;
         }
         if (!password) {
             if (passErr) passErr.textContent = 'Informe sua senha.';
+            if (!hasError) window.showToast?.('Informe sua senha.', 'error');
             hasError = true;
         }
         if (hasError) return;
 
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        }
         if (coldStartNotice) coldStartNotice.style.display = 'none';
 
         const timer = setTimeout(() => {
@@ -196,8 +204,10 @@ function setupLoginForm() {
             window.showToast?.(msg, 'error', 5000);
         } finally {
             clearTimeout(timer);
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'ENTRAR';
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'ENTRAR';
+            }
         }
     };
 }
@@ -205,17 +215,22 @@ function setupLoginForm() {
 // 2. Cadastro
 function setupRegisterForm() {
     const form = document.getElementById('formRegister');
-    if (!form) return;
+    const pagePath = window.location.pathname.toLowerCase();
+    const isRegisterPage = pagePath.includes('cadastro') || form !== null;
+    if (!form && !isRegisterPage) return;
 
-    const emailInput = document.getElementById('registerEmail');
-    const passInput = document.getElementById('registerPassword');
-    const confirmInput = document.getElementById('registerConfirmPassword');
-    const submitBtn = document.getElementById('btnRegisterSubmit');
+    const activeForm = form || document.querySelector('.login-right');
+    if (!activeForm) return;
+
+    const emailInput = document.getElementById('registerEmail') || activeForm.querySelector('input[type="email"]');
+    const passInput = document.getElementById('registerPassword') || document.getElementById('senha');
+    const confirmInput = document.getElementById('registerConfirmPassword') || document.getElementById('confirmarSenha');
+    const submitBtn = document.getElementById('btnRegisterSubmit') || activeForm.querySelector('.button-right');
     const emailErr = document.getElementById('registerEmailError');
     const passErr = document.getElementById('registerPasswordError');
     const confirmErr = document.getElementById('registerConfirmPasswordError');
 
-    form.onsubmit = async (e) => {
+    activeForm.onsubmit = async (e) => {
         e.preventDefault();
         if (emailErr) emailErr.textContent = '';
         if (passErr) passErr.textContent = '';
@@ -229,20 +244,25 @@ function setupRegisterForm() {
         const emailCheck = validateRealEmailClient(email);
         if (!emailCheck.valid) {
             if (emailErr) emailErr.textContent = emailCheck.message;
+            window.showToast?.(emailCheck.message, 'error');
             hasError = true;
         }
         if (password.length < 6) {
             if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
+            if (!hasError) window.showToast?.('A senha deve ter no mínimo 6 caracteres.', 'error');
             hasError = true;
         }
         if (password !== confirm) {
             if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
+            if (!hasError) window.showToast?.('As senhas não coincidem.', 'error');
             hasError = true;
         }
         if (hasError) return;
 
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        }
 
         try {
             await window.apiService.auth.register(email, password);
@@ -259,19 +279,23 @@ function setupRegisterForm() {
             if (emailErr) emailErr.textContent = err.message || 'Erro ao realizar cadastro.';
             window.showToast?.(err.message || 'Erro ao cadastrar.', 'error');
         } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'CADASTRAR';
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'CADASTRAR';
+            }
         }
     };
 }
 
-// 3. Recuperação - Etapa 1
+// 3. Recuperação - Etapa 1 (Solicitar Código)
 function setupRecoveryStep1() {
-    const form = document.getElementById('formRecoveryStep1');
-    if (!form) return;
+    const pagePath = window.location.pathname.toLowerCase();
+    const isStep1Page = pagePath.includes('recuperarsenha') || pagePath.includes('recuperar-senha');
+    const form = document.getElementById('formRecoveryStep1') || (isStep1Page ? document.querySelector('.login-right') : null);
+    if (!form || !isStep1Page) return;
 
-    const emailInput = document.getElementById('recoveryEmailStep1');
-    const submitBtn = document.getElementById('btnRecoveryStep1Submit');
+    const emailInput = document.getElementById('recoveryEmailStep1') || form.querySelector('input[type="email"]');
+    const submitBtn = document.getElementById('btnRecoveryStep1Submit') || form.querySelector('.button-right');
     const errEl = document.getElementById('recoveryStep1Error');
 
     form.onsubmit = async (e) => {
@@ -281,40 +305,44 @@ function setupRecoveryStep1() {
         const emailCheck = validateRealEmailClient(email);
         if (!emailCheck.valid) {
             if (errEl) errEl.textContent = emailCheck.message;
+            window.showToast?.(emailCheck.message, 'error');
             return;
         }
 
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        }
 
         try {
             const res = await window.apiService.auth.forgotPassword(email);
             sessionStorage.setItem('recovery_email', email);
-            window.showToast?.(res.message, 'success', 5000);
+            window.showToast?.(res.message || 'Código enviado com sucesso!', 'success', 5000);
+            
+            const targetPage = pagePath.includes('recuperarsenha') ? 'codigosenha.html' : 'codigosenha.html';
             setTimeout(() => {
-                window.location.href = 'codigo-verificacao.html';
+                window.location.href = targetPage;
             }, 800);
         } catch (err) {
             if (errEl) errEl.textContent = err.message || 'Email não encontrado.';
             window.showToast?.(err.message || 'Erro ao enviar código.', 'error');
         } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'ENVIAR';
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'ENVIAR';
+            }
         }
     };
 }
 
-// 4. Recuperação - Etapa 2
+// 4. Recuperação - Etapa 2 (Inserir Código OTP)
 function setupRecoveryStep2() {
-    const form = document.getElementById('formRecoveryStep2');
-    if (!form) return;
+    const pagePath = window.location.pathname.toLowerCase();
+    const isStep2Page = pagePath.includes('codigosenha') || pagePath.includes('codigo-verificacao');
+    const form = document.getElementById('formRecoveryStep2') || (isStep2Page ? document.querySelector('.login-right') : null);
+    if (!form || !isStep2Page) return;
 
-    const otpInputs = [
-        document.getElementById('otp1'),
-        document.getElementById('otp2'),
-        document.getElementById('otp3'),
-        document.getElementById('otp4')
-    ];
+    const otpInputs = Array.from(form.querySelectorAll('.codigo-input'));
     const errEl = document.getElementById('recoveryStep2Error');
     const resendBtn = document.getElementById('btnRecoveryResend');
     const recoveryEmail = sessionStorage.getItem('recovery_email') || '';
@@ -322,29 +350,32 @@ function setupRecoveryStep2() {
     if (otpInputs[0]) otpInputs[0].focus();
 
     otpInputs.forEach((inp, idx) => {
-        if (!inp) return;
+        inp.maxLength = 1;
+        inp.inputMode = 'numeric';
+        inp.autocomplete = 'off';
+
         inp.oninput = (e) => {
             const cleanVal = e.target.value.replace(/\D/g, '');
             inp.value = cleanVal ? cleanVal[0] : '';
-            if (cleanVal && idx < 3 && otpInputs[idx + 1]) {
+            if (cleanVal && idx < otpInputs.length - 1) {
                 otpInputs[idx + 1].focus();
             }
         };
 
         inp.onkeydown = (e) => {
-            if (e.key === 'Backspace' && !inp.value && idx > 0 && otpInputs[idx - 1]) {
+            if (e.key === 'Backspace' && !inp.value && idx > 0) {
                 otpInputs[idx - 1].focus();
             }
         };
 
         inp.onpaste = (e) => {
             e.preventDefault();
-            const pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 4);
+            const pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, otpInputs.length);
             if (pasted) {
                 for (let i = 0; i < pasted.length; i++) {
                     if (otpInputs[i]) otpInputs[i].value = pasted[i];
                 }
-                const nextIdx = Math.min(pasted.length, 3);
+                const nextIdx = Math.min(pasted.length, otpInputs.length - 1);
                 if (otpInputs[nextIdx]) otpInputs[nextIdx].focus();
             }
         };
@@ -358,7 +389,7 @@ function setupRecoveryStep2() {
             }
             try {
                 const res = await window.apiService.auth.forgotPassword(recoveryEmail);
-                window.showToast?.(res.message, 'info', 5000);
+                window.showToast?.(res.message || 'Código reenviado!', 'info', 5000);
                 otpInputs.forEach(i => { if (i) i.value = ''; });
                 if (otpInputs[0]) otpInputs[0].focus();
             } catch (err) {
@@ -373,26 +404,31 @@ function setupRecoveryStep2() {
         const code = otpInputs.map(i => i?.value || '').join('');
         if (code.length < 4) {
             if (errEl) errEl.textContent = 'Digite os 4 dígitos do código de verificação.';
+            window.showToast?.('Digite os 4 dígitos do código.', 'error');
             return;
         }
 
         sessionStorage.setItem('recovery_code', code);
         window.showToast?.('Código confirmado! Defina sua nova senha.', 'success');
+        
+        const targetPage = pagePath.includes('codigosenha') ? 'novasenha.html' : 'novasenha.html';
         setTimeout(() => {
-            window.location.href = 'nova-senha.html';
+            window.location.href = targetPage;
         }, 600);
     };
 }
 
-// 5. Recuperação - Etapa 3
+// 5. Recuperação - Etapa 3 (Definir Nova Senha)
 function setupRecoveryStep3() {
-    const form = document.getElementById('formRecoveryStep3');
-    if (!form) return;
+    const pagePath = window.location.pathname.toLowerCase();
+    const isStep3Page = pagePath.includes('novasenha') || pagePath.includes('nova-senha');
+    const form = document.getElementById('formRecoveryStep3') || (isStep3Page ? document.querySelector('.login-right') : null);
+    if (!form || !isStep3Page) return;
 
-    const emailInput = document.getElementById('recoveryEmailStep3');
-    const passInput = document.getElementById('recoveryNewPassword');
-    const confirmInput = document.getElementById('recoveryConfirmNewPassword');
-    const submitBtn = document.getElementById('btnRecoveryStep3Submit');
+    const emailInput = document.getElementById('recoveryEmailStep3') || form.querySelector('input[type="email"]');
+    const passInput = document.getElementById('recoveryNewPassword') || document.getElementById('senha');
+    const confirmInput = document.getElementById('recoveryConfirmNewPassword') || document.getElementById('confirmarSenha');
+    const submitBtn = document.getElementById('btnRecoveryStep3Submit') || form.querySelector('.button-right');
     const passErr = document.getElementById('recoveryNewPassError');
     const confirmErr = document.getElementById('recoveryConfirmPassError');
 
@@ -418,22 +454,26 @@ function setupRecoveryStep3() {
         }
         if (newPass.length < 6) {
             if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
+            if (!hasError) window.showToast?.('A senha deve ter no mínimo 6 caracteres.', 'error');
             hasError = true;
         }
         if (newPass !== confirmPass) {
             if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
+            if (!hasError) window.showToast?.('As senhas não coincidem.', 'error');
             hasError = true;
         }
         if (hasError) return;
 
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="login-spinner"></span>';
+        }
 
         try {
             const res = await window.apiService.auth.resetPassword(email, storedCode, newPass);
             sessionStorage.removeItem('recovery_email');
             sessionStorage.removeItem('recovery_code');
-            window.showToast?.(res.message, 'success');
+            window.showToast?.(res.message || 'Senha alterada com sucesso!', 'success');
             setTimeout(() => {
                 window.location.replace('login.html');
             }, 800);
@@ -441,8 +481,10 @@ function setupRecoveryStep3() {
             if (passErr) passErr.textContent = err.message || 'Erro ao redefinir senha.';
             window.showToast?.(err.message || 'Erro ao redefinir senha.', 'error');
         } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'LOGIN';
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'LOGIN';
+            }
         }
     };
 }

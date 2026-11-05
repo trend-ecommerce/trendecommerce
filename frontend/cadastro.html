@@ -1,102 +1,55 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrendCommerce AI - Cadastro</title>
+    <title>TrendEcommerce AI</title>
     <link rel="icon" type="image/png" href="assets/logo.png">
-    
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Phosphor Icons -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-
-    <!-- CSS Stylesheets -->
-    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/login.css">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
-<body class="auth-mode">
-    <div id="appRoot" class="app-root auth-view">
-        <div id="toast-container" class="toast-container" aria-live="polite"></div>
+<body>
+    <div class="logo">
+        <img src="assets/logo.png" alt="Logo da Empresa">
+    </div>
+    <div class="login-pai">
+        <div class="login-container">
+            <form class="login-right" id="formRegister" novalidate>
+                <h1>EMAIL:</h1>
+                <input class="login-input" type="email" id="registerEmail" placeholder="Digite seu email..." required autocomplete="email">
+                <span id="registerEmailError" class="login-field-error"></span>
 
-        <div class="auth-root-wrapper">
-            <div class="logo logo-header">
-                <img src="assets/logo.png" alt="TrendCommerce Logo" class="logo-img">
-            </div>
-
-            <div class="login-pai">
-                <div class="login-container">
-                    <!-- Painel Esquerdo -->
-                    <div class="login-left">
-                        <h1>ACESSE SUA CONTA</h1>
-                        <a href="login.html" class="login-button" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none;">
-                            ENTRAR
-                        </a>
-                    </div>
-
-                    <!-- Painel Direito: Formulário de Cadastro -->
-                    <div class="login-right">
-                        <form id="formRegister" class="login-form-content" noValidate>
-                            <h1>EMAIL:</h1>
-                            <input
-                                type="email"
-                                id="registerEmail"
-                                class="login-input"
-                                placeholder="Digite seu email..."
-                                required
-                                autocomplete="email"
-                            >
-                            <span id="registerEmailError" class="login-field-error"></span>
-
-                            <h1>SENHA:</h1>
-                            <div class="password-container">
-                                <input
-                                    type="password"
-                                    id="registerPassword"
-                                    class="login-input"
-                                    placeholder="Digite sua senha..."
-                                    required
-                                    autocomplete="new-password"
-                                >
-                                <button type="button" id="toggleRegisterSenha" aria-label="Mostrar ou ocultar senha">
-                                    <i class="ph ph-eye"></i>
-                                </button>
-                            </div>
-                            <span id="registerPasswordError" class="login-field-error"></span>
-
-                            <h1>CONFIRMAR SENHA:</h1>
-                            <div class="password-container">
-                                <input
-                                    type="password"
-                                    id="registerConfirmPassword"
-                                    class="login-input"
-                                    placeholder="Digite sua senha..."
-                                    required
-                                    autocomplete="new-password"
-                                >
-                                <button type="button" id="toggleConfirmarSenha" aria-label="Mostrar ou ocultar confirmação de senha">
-                                    <i class="ph ph-eye"></i>
-                                </button>
-                            </div>
-                            <span id="registerConfirmPasswordError" class="login-field-error"></span>
-
-                            <button type="submit" id="btnRegisterSubmit" class="button-right">
-                                CADASTRAR
-                            </button>
-                        </form>
-                    </div>
+                <h1>SENHA:</h1>
+                <div class="password-container">
+                    <input class="login-input" type="password" id="senha" placeholder="Digite sua senha..." required autocomplete="new-password">
+                    <button type="button" id="toggleSenha"><i class="ph ph-eye"></i></button>
                 </div>
+                <span id="registerPasswordError" class="login-field-error"></span>
+
+                <h1>CONFIRMAR SENHA:</h1>
+                <div class="password-container">
+                    <input class="login-input" type="password" id="confirmarSenha" placeholder="Digite sua senha..." required autocomplete="new-password">
+                    <button type="button" id="toggleConfirmarSenha"><i class="ph ph-eye"></i></button>
+                </div>
+                <span id="registerConfirmPasswordError" class="login-field-error"></span>
+
+                <button type="submit" id="btnRegisterSubmit" class="button-right">CADASTRAR</button>
+            </form>
+            <div class="login-left">
+                <h1>ACESSE SUA CONTA</h1>
+                <button type="button" class="login-button" onclick="window.location.href='login.html'">ENTRAR</button>
             </div>
         </div>
-
     </div>
+        
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-    <!-- Scripts -->
     <script src="js/api.js"></script>
     <script src="js/toast.js"></script>
     <script src="js/auth.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
