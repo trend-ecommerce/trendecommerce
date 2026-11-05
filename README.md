@@ -145,8 +145,8 @@ trendecommerce/
 ├── data/                    # Banco SQLite local e seeds iniciais
 ├── frontend/                # Interface SPA (HTML, CSS, JS, Assets)
 │   ├── assets/              # Estilos e fontes
-│   ├── js/                  # Controladores client-side (api.js, auth.js, dashboard.js)
-│   ├── react/               # Componentes complementares
+│   ├── js/                  # Controladores client-side (api.js, auth.js, sidebar.js, etc.)
+│   ├── ia-preditiva.html    # Painel preditivo e métricas de demanda
 │   ├── index.html           # Ponto de entrada do SPA
 │   └── server.py            # Servidor local leve para desenvolvimento do frontend (Porta 3000)
 ├── src/

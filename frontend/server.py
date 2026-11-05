@@ -39,11 +39,28 @@ def run_server():
             pass
 
     os.chdir(DIRECTORY)
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        url = f"http://localhost:{PORT}"
+    socketserver.TCPServer.allow_reuse_address = True
+    port = PORT
+    httpd = None
+    for attempt_port in range(port, port + 20):
+        try:
+            httpd = socketserver.TCPServer(("", attempt_port), Handler)
+            port = attempt_port
+            break
+        except OSError:
+            continue
+
+    if not httpd:
+        print(f"❌ Erro: Não foi possível vincular a porta {PORT} nem as portas subsequentes.")
+        return
+
+    with httpd:
+        url = f"http://localhost:{port}"
         print("=" * 60)
         print("🚀 TrendEcommerce AI - Frontend Server Iniciado")
         print(f"📡 Acesse: {url}")
+        if port != PORT:
+            print(f"⚠️  Aviso: Porta {PORT} estava ocupada/bloqueada, usando porta {port}.")
         print("=" * 60)
         print("Pressione Ctrl+C para encerrar o servidor.\n")
         try:
