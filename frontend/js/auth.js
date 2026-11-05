@@ -4,6 +4,41 @@
  * codigo-verificacao.html e nova-senha.html.
  */
 
+const BLOCKED_DOMAINS_CLIENT = new Set([
+    'teste.com', 'teste.com.br', 'test.com', 'example.com', 'example.org', 'example.net',
+    'falso.com', 'fake.com', 'fakemail.com', 'email.com', 'dominio.com', 'meudominio.com',
+    'tempmail.com', 'temp-mail.org', '10minutemail.com', 'mailinator.com', 'yopmail.com',
+    'guerrillamail.com', 'sharklasers.com', 'trashmail.com', 'getnada.com', 'maildrop.cc',
+    'dispostable.com', 'throwawaymail.com', 'mohmal.com', 'mailnesia.com',
+    'gamil.com', 'gmial.com', 'gnail.com', 'gmai.com', 'gmail.co', 'gmail.con',
+    'outlok.com', 'outllok.com', 'outlook.co', 'hotmal.com', 'hotmial.com', 'htmail.com',
+    'yaho.com', 'yahooo.com'
+]);
+
+function validateRealEmailClient(email) {
+    const clean = (email || '').trim().toLowerCase();
+    if (!clean) {
+        return { valid: false, message: 'Informe seu email.' };
+    }
+    if (clean === 'admin@trendecommerce.com') {
+        return { valid: true, message: '' };
+    }
+    const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(clean)) {
+        return { valid: false, message: 'Formato de email inválido. Digite um email verdadeiro (ex: nome@gmail.com).' };
+    }
+    const parts = clean.split('@');
+    const local = parts[0];
+    const domain = parts[1];
+    if (local.length < 2 || local.startsWith('.') || local.endsWith('.') || local.includes('..')) {
+        return { valid: false, message: 'Endereço de email inválido.' };
+    }
+    if (BLOCKED_DOMAINS_CLIENT.has(domain)) {
+        return { valid: false, message: `O domínio @${domain} não é permitido. Use um email verdadeiro (ex: Gmail, Outlook, Hotmail).` };
+    }
+    return { valid: true, message: '' };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setupPasswordToggles();
     setupLoginForm();
@@ -43,6 +78,72 @@ function setupLoginForm() {
     const passErr = document.getElementById('loginPasswordError');
     const coldStartNotice = document.getElementById('coldStartNotice');
 
+    // Criar banner de verificação de e-mail se necessário
+    let verifyBanner = document.getElementById('emailVerificationBanner');
+    if (!verifyBanner) {
+        verifyBanner = document.createElement('div');
+        verifyBanner.id = 'emailVerificationBanner';
+        verifyBanner.style.cssText = 'display: none; width: 100%; margin-top: 10px; padding: 10px 14px; border-radius: 12px; font-size: 12px; line-height: 1.45; text-align: center;';
+        submitBtn.insertAdjacentElement('beforebegin', verifyBanner);
+    }
+
+    const showVerificationBanner = (type, htmlContent, targetEmail) => {
+        if (!verifyBanner) return;
+        verifyBanner.style.display = 'block';
+        if (type === 'success') {
+            verifyBanner.style.background = 'rgba(16, 185, 129, 0.14)';
+            verifyBanner.style.border = '1px solid rgba(16, 185, 129, 0.45)';
+            verifyBanner.style.color = '#34d399';
+            verifyBanner.innerHTML = htmlContent;
+        } else {
+            verifyBanner.style.background = 'rgba(0, 212, 255, 0.1)';
+            verifyBanner.style.border = '1px solid rgba(0, 212, 255, 0.35)';
+            verifyBanner.style.color = '#e0f2fe';
+            verifyBanner.innerHTML = `
+                <div>${htmlContent}</div>
+                ${targetEmail ? `<button type="button" id="btnResendVerifyEmail" style="margin-top: 8px; background: rgba(0, 212, 255, 0.2); border: 1px solid rgba(0, 212, 255, 0.5); color: #00f0ff; border-radius: 999px; padding: 4px 14px; font-size: 11px; font-weight: 700; cursor: pointer;">Reenviar e-mail de confirmação</button>` : ''}
+            `;
+            const resendBtn = document.getElementById('btnResendVerifyEmail');
+            if (resendBtn && targetEmail) {
+                resendBtn.onclick = async () => {
+                    resendBtn.disabled = true;
+                    resendBtn.textContent = 'Enviando...';
+                    try {
+                        const res = await window.apiService.auth.resendVerification(targetEmail);
+                        window.showToast?.(res.message || 'E-mail de confirmação reenviado!', 'success', 5000);
+                        resendBtn.textContent = 'E-mail reenviado!';
+                    } catch (err) {
+                        window.showToast?.(err.message || 'Aguarde alguns instantes para reenviar.', 'warning');
+                        resendBtn.disabled = false;
+                        resendBtn.textContent = 'Reenviar e-mail de confirmação';
+                    }
+                };
+            }
+        }
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash || '';
+    const pendingEmail = sessionStorage.getItem('pending_verify_email') || '';
+
+    if (pendingEmail && emailInput && !emailInput.value) {
+        emailInput.value = pendingEmail;
+    }
+
+    if (params.get('verified') === '1' || hash.includes('access_token=')) {
+        showVerificationBanner(
+            'success',
+            '✅ <strong>E-mail confirmado com sucesso!</strong> Sua conta foi ativada. Digite sua senha para entrar.'
+        );
+        window.showToast?.('E-mail verificado com sucesso! Faça seu login.', 'success', 5000);
+    } else if (params.get('pending_verify') === '1' && pendingEmail) {
+        showVerificationBanner(
+            'info',
+            `📧 <strong>Confirme seu e-mail para liberar o login!</strong><br>Enviamos um link de confirmação para <strong>${pendingEmail}</strong>. Verifique sua caixa de entrada e spam.`,
+            pendingEmail
+        );
+    }
+
     form.onsubmit = async (e) => {
         e.preventDefault();
         if (emailErr) emailErr.textContent = '';
@@ -52,8 +153,9 @@ function setupLoginForm() {
         const password = passInput?.value || '';
 
         let hasError = false;
-        if (!email) {
-            if (emailErr) emailErr.textContent = 'Informe seu email.';
+        const emailCheck = validateRealEmailClient(email);
+        if (!emailCheck.valid) {
+            if (emailErr) emailErr.textContent = emailCheck.message;
             hasError = true;
         }
         if (!password) {
@@ -73,6 +175,7 @@ function setupLoginForm() {
         try {
             const data = await window.apiService.auth.login(email, password);
             clearTimeout(timer);
+            sessionStorage.removeItem('pending_verify_email');
             window.showToast?.(`Bem-vindo, ${data.user.email}!`, 'success');
             setTimeout(() => {
                 window.location.replace('ia-preditiva.html');
@@ -80,8 +183,17 @@ function setupLoginForm() {
         } catch (err) {
             clearTimeout(timer);
             if (coldStartNotice) coldStartNotice.style.display = 'none';
-            if (passErr) passErr.textContent = err.message || 'Email ou senha incorretos.';
-            window.showToast?.(err.message || 'Falha ao autenticar.', 'error');
+            const msg = err.message || 'Email ou senha incorretos.';
+            if (msg.toLowerCase().includes('verificado') || msg.toLowerCase().includes('confirmação')) {
+                showVerificationBanner(
+                    'info',
+                    `⚠️ <strong>E-mail ainda não confirmado!</strong><br>${msg}`,
+                    email
+                );
+            } else if (passErr) {
+                passErr.textContent = msg;
+            }
+            window.showToast?.(msg, 'error', 5000);
         } finally {
             clearTimeout(timer);
             submitBtn.disabled = false;
@@ -114,8 +226,9 @@ function setupRegisterForm() {
         const confirm = confirmInput?.value || '';
 
         let hasError = false;
-        if (!email) {
-            if (emailErr) emailErr.textContent = 'Informe um email válido.';
+        const emailCheck = validateRealEmailClient(email);
+        if (!emailCheck.valid) {
+            if (emailErr) emailErr.textContent = emailCheck.message;
             hasError = true;
         }
         if (password.length < 6) {
@@ -133,10 +246,15 @@ function setupRegisterForm() {
 
         try {
             await window.apiService.auth.register(email, password);
-            window.showToast?.('Cadastro realizado com sucesso! Redirecionando para login...', 'success');
+            sessionStorage.setItem('pending_verify_email', email.toLowerCase());
+            window.showToast?.(
+                `Enviamos um e-mail de confirmação para ${email}! Confirme na sua caixa de entrada para ativar o login.`,
+                'info',
+                6000
+            );
             setTimeout(() => {
-                window.location.replace('login.html');
-            }, 1000);
+                window.location.replace('login.html?pending_verify=1');
+            }, 1400);
         } catch (err) {
             if (emailErr) emailErr.textContent = err.message || 'Erro ao realizar cadastro.';
             window.showToast?.(err.message || 'Erro ao cadastrar.', 'error');
@@ -160,8 +278,9 @@ function setupRecoveryStep1() {
         e.preventDefault();
         if (errEl) errEl.textContent = '';
         const email = (emailInput?.value || '').trim();
-        if (!email) {
-            if (errEl) errEl.textContent = 'Informe seu email cadastrado.';
+        const emailCheck = validateRealEmailClient(email);
+        if (!emailCheck.valid) {
+            if (errEl) errEl.textContent = emailCheck.message;
             return;
         }
 
