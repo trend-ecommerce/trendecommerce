@@ -427,7 +427,7 @@ class SyncCategoriesResponse(BaseModel):
 
 @router.post("/sync-categories", response_model=SyncCategoriesResponse, summary="Sincronizar dados da API de Histórico de Vendas")
 def sync_vendas_api_endpoint(
-    min_date: str = Query("2024-01-01", description="Data inicial do histórico a importar (YYYY-MM-DD)"),
+    min_date: str = Query("2020-01-01", description="Data inicial do histórico a importar (YYYY-MM-DD)"),
     db: Session = Depends(get_db)
 ):
     """Sincroniza o catálogo de produtos e séries de vendas da API do professor."""

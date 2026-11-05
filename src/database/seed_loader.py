@@ -38,7 +38,7 @@ def seed_database_if_empty(session: Session):
                 session.query(Product).delete()
                 session.commit()
 
-            sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2024-01-01")
+            sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2020-01-01")
             if sync_res.get("success"):
                 print(
                     f"[SeedLoader] Catálogo oficial sincronizado: "
