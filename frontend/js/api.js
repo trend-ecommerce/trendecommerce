@@ -21,8 +21,13 @@ const API_BASE_URL = (() => {
         return 'http://localhost:8000/api/v1';
     }
 
-    // Em produção (ex: Vercel): utiliza rota relativa /api/v1
-    return `${window.location.origin}/api/v1`;
+    // Em producao na nuvem (ex: Vercel): utiliza o backend ativo no Render
+    if (window.location.hostname.includes('vercel.app')) {
+        return 'https://trendecommerce.onrender.com/api/v1';
+    }
+
+    // Fallback padrao para producao
+    return 'https://trendecommerce.onrender.com/api/v1';
 })();
 
 class ApiService {
