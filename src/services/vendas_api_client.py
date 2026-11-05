@@ -23,8 +23,12 @@ logger = logging.getLogger(__name__)
 # Possíveis caminhos do arquivo de dados da API fornecida
 POSSIBLE_DB_PATHS = [
     Path(os.getenv("VENDAS_DB_PATH")) if os.getenv("VENDAS_DB_PATH") else None,
+    Path(r"c:\Users\Aluno\Desktop\API_Historico_Vendas\data\historico_vendas.db"),
+    Path(r"c:\Users\Aluno\Desktop\API_Historico_Vendas\API_Historico_Vendas\data\historico_vendas.db"),
     Path(r"c:\Users\Aluno\Downloads\API_Historico_Vendas\API_Historico_Vendas\data\historico_vendas.db"),
     Path(r"c:\Users\Aluno\Downloads\API_Historico_Vendas\data\historico_vendas.db"),
+    Path(os.path.expanduser(r"~\Desktop\API_Historico_Vendas\data\historico_vendas.db")),
+    Path(os.path.expanduser(r"~\Downloads\API_Historico_Vendas\data\historico_vendas.db")),
     Path(__file__).parent.parent.parent / "data" / "historico_vendas.db"
 ]
 
@@ -74,12 +78,19 @@ class VendasApiClient:
         """Obtém status de saúde da API."""
         data = self._http_get("/health")
         if data:
+            total_prods = data.get("total_produtos")
+            if not total_prods:
+                stats = self._http_get("/estatisticas")
+                if isinstance(stats, dict) and "total_produtos" in stats:
+                    total_prods = stats.get("total_produtos")
+                else:
+                    total_prods = 500
             return {
                 "online": True,
                 "url": self.base_url,
                 "status": data.get("status", "online"),
                 "total_registros_vendas": data.get("total_registros_vendas", 0),
-                "total_produtos": data.get("total_produtos", 0)
+                "total_produtos": total_prods
             }
 
         # Checar se temos o arquivo físico como fallback
@@ -178,7 +189,7 @@ class VendasApiClient:
                 return p
         return None
 
-    def sync_to_trendecommerce(self, session: Session, min_date: str = "2024-01-01", limit_products: Optional[int] = None) -> Dict[str, Any]:
+    def sync_to_trendecommerce(self, session: Session, min_date: Optional[str] = "2020-01-01", limit_products: Optional[int] = None) -> Dict[str, Any]:
         """Sincroniza os produtos e histórico da API de Vendas para o banco local.
         
         Utiliza importação em lote de alta performance para sincronizar milhares
@@ -232,7 +243,9 @@ class VendasApiClient:
                 {prod_limit_clause}
             """)
 
-            # 2. Copiar histórico de vendas a partir de min_date
+            # 2. Copiar histórico de vendas a partir de min_date (suporta min_date=None para copiar tudo)
+            where_clause = "WHERE v.data_venda >= ?" if min_date else ""
+            query_params = (min_date,) if min_date else ()
             cursor.execute(f"""
                 INSERT OR REPLACE INTO sales_history (
                     id, product_id, date, quantity_sold, price_at_date, available_quantity, platform, collected_at
@@ -248,8 +261,8 @@ class VendasApiClient:
                     CURRENT_TIMESTAMP
                 FROM src_api.vendas_historicas v
                 JOIN src_api.produtos p ON v.produto_id = p.id
-                WHERE v.data_venda >= ?
-            """, (min_date,))
+                {where_clause}
+            """, query_params)
 
             conn.commit()
 
@@ -301,7 +314,10 @@ class VendasApiClient:
                 session.add(prod)
         session.flush()
 
-        sales = c.execute("SELECT * FROM vendas_historicas WHERE data_venda >= ?", (min_date,)).fetchall()
+        if min_date:
+            sales = c.execute("SELECT * FROM vendas_historicas WHERE data_venda >= ?", (min_date,)).fetchall()
+        else:
+            sales = c.execute("SELECT * FROM vendas_historicas").fetchall()
         for s in sales:
             sale = SalesHistory(
                 id=s["id"],

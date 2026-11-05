@@ -81,7 +81,7 @@ def seed_data(manager: DatabaseManager):
 
         # 2. Tentar sincronizar da nova API de Vendas oficial
         logger.info("Tentando sincronizar produtos e histórico da API de Histórico de Vendas...")
-        sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2024-01-01")
+        sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2020-01-01")
 
         if sync_res.get("success"):
             logger.info(f"Sucesso! {sync_res['total_products']} produtos e {sync_res['total_sales']:,} registros de vendas importados da API oficial.")

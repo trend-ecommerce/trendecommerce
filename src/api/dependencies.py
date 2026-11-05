@@ -132,40 +132,20 @@ def get_ml_forecaster(db: Session = Depends(get_db)) -> FutureForecaster:
         _forecaster_instance = FutureForecaster(db_manager=get_db_instance())
 
     if not _forecaster_trained:
-        # Carregar produtos e histórico do banco para treinar o modelo
-        products = db.query(Product).all()
-        sales = db.query(SalesHistory).all()
+        try:
+            bind = db.get_bind()
+            products_df = pd.read_sql("SELECT id as product_id, title, category, price, platform, external_id FROM products", bind)
+            sales_df = pd.read_sql("""
+                SELECT product_id, date, quantity_sold, price_at_date as price, available_quantity, platform 
+                FROM sales_history 
+                ORDER BY date DESC 
+                LIMIT 50000
+            """, bind)
 
-        if products and sales:
-            products_data = [
-                {
-                    "product_id": p.id,
-                    "title": p.title,
-                    "category": p.category or "Geral",
-                    "price": p.price or 100.0,
-                    "platform": p.platform,
-                    "external_id": p.external_id
-                }
-                for p in products
-            ]
-            sales_data = [
-                {
-                    "product_id": s.product_id,
-                    "date": s.date,
-                    "quantity_sold": s.quantity_sold,
-                    "price": s.price_at_date or 100.0,
-                    "available_quantity": s.available_quantity or 50,
-                    "platform": s.platform
-                }
-                for s in sales
-            ]
-            products_df = pd.DataFrame(products_data)
-            sales_df = pd.DataFrame(sales_data)
-
-            try:
+            if not products_df.empty and not sales_df.empty:
                 _forecaster_instance.train_model(products_df, sales_df)
                 _forecaster_trained = True
-            except Exception as e:
-                print(f"[Aviso ML] Erro ao treinar modelo inicial: {e}")
+        except Exception as e:
+            print(f"[Aviso ML] Erro ao treinar modelo inicial: {e}")
 
     return _forecaster_instance
