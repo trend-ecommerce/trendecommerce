@@ -71,7 +71,7 @@ class OpportunityRecommender:
                 product_id=p_id,
                 title=title,
                 category=str(prod.get("category", "Geral")),
-                platform=str(prod.get("platform", "mercadolivre")),
+                platform=str(prod.get("platform", "api_vendas")),
                 price=price,
                 horizon_days=horizon_days,
                 predicted_units=pred_units,

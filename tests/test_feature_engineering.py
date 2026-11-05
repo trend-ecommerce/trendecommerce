@@ -21,14 +21,6 @@ class TestFeatureEngineer:
         assert "preco_medio_7_dias" in result.columns
         assert "variacao_preco" in result.columns
 
-    def test_trend_features_created(self, sample_trends_data):
-        """Verifica criação de features de tendência."""
-        result = self.engineer.create_trend_features(sample_trends_data)
-        assert "media_pesquisas_7d" in result.columns
-        assert "crescimento_pesquisas" in result.columns
-        assert "tendencia_pesquisa" in result.columns
-        assert "volatilidade_pesquisa" in result.columns
-
     def test_temporal_features_created(self, sample_sales_data):
         """Verifica criação de features temporais."""
         result = self.engineer.create_temporal_features(sample_sales_data)

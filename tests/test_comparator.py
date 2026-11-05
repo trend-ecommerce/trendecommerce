@@ -1,11 +1,10 @@
 import pytest
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
 
 from src.ml.comparator import DemandComparator, ValidationReport, ValidationRow
 from src.database.connection import DatabaseManager
-from src.database.models import Base, Product, SalesHistory
+from src.database.models import Base
 
 
 @pytest.fixture
@@ -21,8 +20,8 @@ def mock_db_manager(tmp_path):
 def sample_dataset():
     """Gera dataset de produtos e vendas para validação."""
     products_df = pd.DataFrame([
-        {"product_id": 1, "title": "Produto Teste A", "category": "Eletrônicos", "price": 100.0, "platform": "mercadolivre"},
-        {"product_id": 2, "title": "Produto Teste B", "category": "Celulares", "price": 500.0, "platform": "mercadolivre"},
+        {"product_id": 1, "title": "Produto Teste A", "category": "Eletrônicos", "price": 100.0, "platform": "api_vendas"},
+        {"product_id": 2, "title": "Produto Teste B", "category": "Smartphones", "price": 500.0, "platform": "api_vendas"},
     ])
     
     dates = pd.date_range(start="2026-01-01", periods=45, freq="D")
@@ -38,7 +37,7 @@ def sample_dataset():
                 "quantity_sold": int(max(0, base + np.random.randint(-5, 6))),
                 "price_at_date": 100.0 if p_id == 1 else 500.0,
                 "available_quantity": 100,
-                "platform": "mercadolivre"
+                "platform": "api_vendas"
             })
             
     sales_df = pd.DataFrame(sales_rows)

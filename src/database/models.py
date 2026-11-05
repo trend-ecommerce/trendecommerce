@@ -38,7 +38,7 @@ class Product(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     external_id = Column(String(100), unique=True, nullable=True, index=True)
-    platform = Column(String(50), default="proprio")
+    platform = Column(String(50), default="api_vendas")
     title = Column(String(500), nullable=False)
     category = Column(String(255), nullable=True, index=True)
     price = Column(Float, nullable=False)
@@ -77,7 +77,7 @@ class SalesHistory(Base):
     quantity_sold = Column(Integer, default=0)
     price_at_date = Column(Float, nullable=False, default=0.0)
     available_quantity = Column(Integer, nullable=True, default=0)
-    platform = Column(String(50), default="proprio")
+    platform = Column(String(50), default="api_vendas")
     collected_at = Column(DateTime, default=datetime.utcnow)
 
     # Relacionamento de volta para o Produto

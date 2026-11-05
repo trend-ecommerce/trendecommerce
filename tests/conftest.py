@@ -1,7 +1,6 @@
 import pytest
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 
 
 @pytest.fixture
@@ -29,60 +28,29 @@ def sample_sales_data():
 
 
 @pytest.fixture
-def sample_trends_data():
-    """Dados de tendências simulados para testes."""
-    dates = pd.date_range(start="2026-01-01", periods=30, freq="D")
-    np.random.seed(42)
-    
-    data = []
-    for keyword in ["notebook", "smartphone", "tablet"]:
-        for date in dates:
-            interest = np.random.randint(10, 100)
-            data.append({
-                "keyword": keyword,
-                "date": date,
-                "interest_score": interest,
-                "source": "mock",
-                "is_mock": True,
-            })
-    
-    return pd.DataFrame(data)
-
-
-@pytest.fixture
 def sample_product_data():
-    """Dados de produtos simulados para testes."""
+    """Dados de produtos simulados para testes (formato API_Historico_Vendas)."""
     return [
         {
-            "source": "mercadolivre",
-            "product_id": "MLB123456",
+            "source": "api_vendas",
+            "product_id": "VENDAS_1",
             "title": "Notebook Dell Inspiron 15",
             "price": 3500.00,
             "currency": "BRL",
-            "category_id": "MLB1648",
+            "category_id": "Informática",
             "sold_quantity": 150,
             "available_quantity": 50,
             "condition": "new",
         },
         {
-            "source": "mercadolivre",
-            "product_id": "MLB789012",
+            "source": "api_vendas",
+            "product_id": "VENDAS_2",
             "title": "iPhone 15 Pro 256GB",
             "price": 7999.00,
             "currency": "BRL",
-            "category_id": "MLB1055",
+            "category_id": "Smartphones",
             "sold_quantity": 300,
             "available_quantity": 20,
             "condition": "new",
         },
     ]
-
-
-@pytest.fixture
-def temp_python_file(tmp_path):
-    """Cria um arquivo Python temporário para testes."""
-    def _create(content: str, filename: str = "test_script.py"):
-        file_path = tmp_path / filename
-        file_path.write_text(content, encoding="utf-8")
-        return str(file_path)
-    return _create

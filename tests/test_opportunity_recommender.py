@@ -5,8 +5,8 @@ from src.ml.opportunity_recommender import OpportunityRecommender
 
 def test_opportunity_recommender_evaluation():
     products_df = pd.DataFrame([
-        {"product_id": 1, "title": "Notebook Dell i7", "category": "Informática", "platform": "mercadolivre", "price": 3500.0},
-        {"product_id": 2, "title": "Fone Bluetooth", "category": "Áudio", "platform": "mercadolivre", "price": 150.0},
+        {"product_id": 1, "title": "Notebook Dell i7", "category": "Informática", "platform": "api_vendas", "price": 3500.0},
+        {"product_id": 2, "title": "Fone Bluetooth", "category": "Áudio", "platform": "api_vendas", "price": 150.0},
     ])
 
     forecasts = {

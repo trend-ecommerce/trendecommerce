@@ -196,7 +196,7 @@ class ApiService {
     };
 
     // ==========================================
-    // Produtos & Histórico
+    // Produtos & Histórico (API_Historico_Vendas)
     // ==========================================
     products = {
         list: async (params = {}) => {
@@ -231,6 +231,17 @@ class ApiService {
 
         getHistory: async (id, days = 30) => {
             return await this.request(`/products/${id}/history?days=${days}`);
+        },
+
+        getApiStatus: async () => {
+            return await this.request('/products/api-status');
+        },
+
+        syncCategories: async (limitPorCat = 10) => {
+            return await this.request('/products/sync-categories', {
+                method: 'POST',
+                body: JSON.stringify({ limit_por_cat: limitPorCat })
+            });
         }
     };
 
@@ -262,15 +273,6 @@ class ApiService {
                     horizon_days: parseInt(horizonDays)
                 })
             });
-        }
-    };
-
-    // ==========================================
-    // Tendências
-    // ==========================================
-    trends = {
-        search: async (keyword = '') => {
-            return await this.request(`/trends/search?keyword=${encodeURIComponent(keyword)}`);
         }
     };
 }

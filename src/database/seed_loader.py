@@ -2,7 +2,7 @@
 
 Sincroniza automaticamente o catálogo de produtos e o histórico de vendas
 da API de Histórico de Vendas caso o banco de dados esteja vazio ou contenha
-registros legados.
+registros fora do padrão da API oficial.
 """
 
 import json
@@ -27,19 +27,19 @@ def seed_database_if_empty(session: Session):
     """Sincroniza produtos e histórico da API de Vendas se o banco estiver vazio ou desatualizado."""
     try:
         products_count = session.query(Product).count()
-        legacy_count = session.query(Product).filter(
-            Product.platform.in_(["mercadolivre", "amazon"])
+        non_api_count = session.query(Product).filter(
+            Product.platform != "api_vendas"
         ).count()
 
-        # Se o banco estiver vazio ou contiver produtos legados antigos, sincronizar com a API oficial
-        if products_count == 0 or legacy_count > 0:
-            if legacy_count > 0:
+        # Se o banco estiver vazio ou contiver produtos que não são da API oficial, sincronizar
+        if products_count == 0 or non_api_count > 0:
+            if non_api_count > 0:
                 session.query(SalesHistory).delete()
                 session.query(Product).delete()
                 session.commit()
 
             sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2020-01-01")
-            if sync_res.get("success"):
+            if sync_res.get("success") and sync_res.get("total_products", 0) > 0:
                 print(
                     f"[SeedLoader] Catálogo oficial sincronizado: "
                     f"{sync_res['total_products']} produtos e {sync_res['total_sales']:,} vendas."
@@ -64,7 +64,7 @@ def seed_database_if_empty(session: Session):
             product = Product(
                 id=p_data.get("id"),
                 external_id=p_data.get("external_id") or f"PROD_{p_data.get('id')}",
-                platform=p_data.get("platform") or "api_vendas",
+                platform="api_vendas",
                 title=p_data.get("title") or "Produto",
                 category=p_data.get("category") or "Geral",
                 price=float(p_data.get("price") or 100.0),
@@ -94,7 +94,7 @@ def seed_database_if_empty(session: Session):
                     quantity_sold=int(s_data.get("quantity_sold", 10)),
                     price_at_date=float(s_data.get("price_at_date", 100.0)),
                     available_quantity=int(s_data.get("available_quantity", 50)),
-                    platform=s_data.get("platform", "api_vendas"),
+                    platform="api_vendas",
                     collected_at=_parse_dt(s_data.get("collected_at"))
                 )
                 session.add(sales_entry)
