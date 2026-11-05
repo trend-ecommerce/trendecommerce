@@ -154,6 +154,24 @@ class ApiService {
             });
         },
 
+        resendVerification: async (email) => {
+            return await this.request('/auth/resend-verification', {
+                method: 'POST',
+                body: JSON.stringify({ email })
+            });
+        },
+
+        verifyEmail: async (email, code) => {
+            const data = await this.request('/auth/verify-email', {
+                method: 'POST',
+                body: JSON.stringify({ email, code })
+            });
+            if (data.access_token) {
+                this.setSession(data.access_token, data.user);
+            }
+            return data;
+        },
+
         getMe: async () => {
             return await this.request('/auth/me');
         },
