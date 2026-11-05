@@ -67,9 +67,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                             };
                             return daysMap[d.day_name] || d.day_name.substring(0, 3);
                         }
-                        const parts = d.date.split('-');
-                        if (parts.length === 3) return `${parts[2]}/${parts[1]}`;
-                        return `D${i + 1}`;
+                        if (d.date) {
+                            if (d.date.includes('/')) {
+                                const p = d.date.split('/');
+                                if (p.length >= 2) return p[0] + '/' + p[1];
+                            } else if (d.date.includes('-')) {
+                                const p = d.date.split('-');
+                                if (p.length === 3) return p[2] + '/' + p[1];
+                            }
+                        }
+                        return 'D' + (i + 1);
                     });
                     const values = res.days.map(d => Math.round(d.predicted_demand));
                     return { daysLabels, values };

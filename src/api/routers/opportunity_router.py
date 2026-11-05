@@ -1,11 +1,13 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+import numpy as np
 import pandas as pd
 
-from src.database.connection import get_session
+from src.api.dependencies import get_db, get_ml_forecaster
 from src.database.models import Product, SalesHistory
 from src.ml.opportunity_recommender import OpportunityRecommender
+from src.ml.future_forecaster import FutureForecaster
 
 router = APIRouter(prefix="/recommendations", tags=["Recomendações & Oportunidades"])
 
@@ -16,9 +18,10 @@ def get_top_products_to_sell(
     category: Optional[str] = Query(None, description="Filtrar por categoria"),
     min_score: float = Query(0.0, description="Score mínimo de oportunidade (0 a 100)"),
     limit: int = Query(10, description="Limite de produtos retornados"),
-    db: Session = Depends(get_session)
+    db: Session = Depends(get_db),
+    forecaster: FutureForecaster = Depends(get_ml_forecaster)
 ):
-    """Retorna os melhores produtos para vender com base em demanda futura e margem."""
+    """Retorna os melhores produtos para vender conectados à matriz de saída preditiva real do XGBoost."""
     products_query = db.query(Product).filter(Product.is_active == True)
     if category:
         products_query = products_query.filter(Product.category.ilike(f"%{category}%"))
@@ -44,20 +47,33 @@ def get_top_products_to_sell(
         "platform": s.platform
     } for s in sales])
 
-    forecasts = {}
-    for p_id in products_df["product_id"]:
-        p_sales = sales_df[sales_df["product_id"] == p_id].sort_values("date")
-        if len(p_sales) >= 14:
-            recent_avg = p_sales["quantity_sold"].iloc[-7:].mean()
-            prior_avg = p_sales["quantity_sold"].iloc[-14:-7].mean()
-            growth = ((recent_avg - prior_avg) / max(1.0, prior_avg)) * 100.0
-            pred_total = int(round(recent_avg * days * (1.0 + (growth / 200.0))))
-            forecasts[p_id] = {
-                "predicted_units": max(5, pred_total),
-                "growth_pct": round(growth, 2)
-            }
+    # 1. Projeção com o motor XGBoost real
+    forecast_results = forecaster.forecast_all_products(
+        products_df=products_df,
+        sales_df=sales_df,
+        horizon_days=days
+    )
+
+    # 2. Extração de aceleração/crescimento real recente %
+    growth_map = {}
+    for pid, grp in sales_df.groupby("product_id"):
+        grp_sorted = grp.sort_values("date")
+        qty = grp_sorted["quantity_sold"].values
+        if len(qty) >= 14:
+            recent = float(np.mean(qty[-7:]))
+            prior = float(np.mean(qty[-14:-7]))
+            growth = ((recent - prior) / max(1.0, prior)) * 100.0
         else:
-            forecasts[p_id] = {"predicted_units": 25, "growth_pct": 5.0}
+            growth = 5.0
+        growth_map[int(pid)] = growth
+
+    forecasts = {
+        f.product_id: {
+            "predicted_units": f.total_predicted_units,
+            "growth_pct": round(growth_map.get(f.product_id, 5.0), 2)
+        }
+        for f in forecast_results
+    }
 
     recommender = OpportunityRecommender()
     recommendations = recommender.evaluate_opportunities(

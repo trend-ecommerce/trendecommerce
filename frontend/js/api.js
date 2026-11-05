@@ -4,7 +4,7 @@
  */
 
 const API_BASE_URL = (() => {
-    if (window.TRENDCOMMERCE_API_URL) return window.TRENDCOMMERCE_API_URL;
+    if (window.TRENDCOMMERCE_API_URL) return window.TRENDCOMMERCE_API_URL.replace(/\/+$/, '');
     const customUrl = localStorage.getItem('trendecommerce_api_url');
     if (customUrl) return customUrl.replace(/\/+$/, '');
 
@@ -19,7 +19,7 @@ const API_BASE_URL = (() => {
     }
 
     // Em produção (ex: Vercel): utiliza rota relativa /api/v1
-    return `${window.location.origin}/api/v1`;
+    return '/api/v1';
 })();
 
 class ApiService {

@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
-from src.api.dependencies import get_db
-from src.database.models import Product, SalesHistory
+from src.api.dependencies import get_db, get_current_user
+from src.database.models import Product, SalesHistory, User
 from src.services.vendas_api_client import vendas_client
 from src.schemas.product_schema import (
     ProductResponse,
@@ -428,7 +428,8 @@ class SyncCategoriesResponse(BaseModel):
 @router.post("/sync-categories", response_model=SyncCategoriesResponse, summary="Sincronizar dados da API de Histórico de Vendas")
 def sync_vendas_api_endpoint(
     min_date: str = Query("2020-01-01", description="Data inicial do histórico a importar (YYYY-MM-DD)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Sincroniza o catálogo de produtos e séries de vendas da API do professor."""
     result = vendas_client.sync_to_trendecommerce(db, min_date=min_date)

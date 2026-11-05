@@ -36,13 +36,26 @@ def test_auth_login_and_me(client):
     assert me_resp.json()["email"] == "admin@trendecommerce.com"
 
 
-def test_auth_google_login_and_register(client):
-    """Testa cadastro e login via Google OAuth2 endpoint."""
-    # 1. Cadastro / Login com novo usuário via Google
+def test_auth_google_login_and_register(client, monkeypatch):
+    """Testa validação obrigatória de credencial criptográfica no Google OAuth2 endpoint."""
     google_email = "novo.google.user@gmail.com"
-    response = client.post("/api/v1/auth/google", json={
+
+    # 1. Tentativa sem token deve ser rejeitada com 400
+    err_resp = client.post("/api/v1/auth/google", json={
         "email": google_email,
         "name": "Google Test User"
+    })
+    assert err_resp.status_code == 400
+
+    # 2. Login com token Google criptograficamente válido (mock de verificação google-auth)
+    from google.oauth2 import id_token
+    monkeypatch.setattr(id_token, "verify_oauth2_token", lambda token, req, client_id: {
+        "email": google_email,
+        "name": "Google Test User"
+    })
+
+    response = client.post("/api/v1/auth/google", json={
+        "token": "valid_google_oauth_jwt_token_simulated"
     })
     assert response.status_code == 200
     data = response.json()
@@ -50,16 +63,10 @@ def test_auth_google_login_and_register(client):
     assert data["user"]["email"] == google_email
     assert data["user"]["name"] == "Google Test User"
 
-    # 2. Login com usuário já existente via Google
-    response_existing = client.post("/api/v1/auth/google", json={
-        "email": "admin@trendecommerce.com"
-    })
-    assert response_existing.status_code == 200
-    assert response_existing.json()["user"]["email"] == "admin@trendecommerce.com"
-
 
 def test_auth_google_otp_request_and_verify(client):
-    """Testa fluxo completo de OTP do Google: solicitação de código e validação."""
+    """Testa fluxo completo de OTP do Google: solicitação de código e validação sem backdoor."""
+    from src.api.routers.auth_router import _google_otp_codes
     test_email = "usuario.verificado.google@gmail.com"
 
     # 1. Solicitar código de verificação
@@ -77,10 +84,18 @@ def test_auth_google_otp_request_and_verify(client):
     })
     assert err_resp.status_code == 400
 
-    # 3. Validar com código de teste aceito
+    # 3. Código estático '1234' DEVE ser rejeitado (backdoor removido)
+    backdoor_resp = client.post("/api/v1/auth/google/verify-code", json={
+        "email": test_email,
+        "code": "1234"
+    })
+    assert backdoor_resp.status_code == 400
+
+    # 4. Validar com código real gerado
+    real_code = _google_otp_codes[test_email]["code"]
     verify_resp = client.post("/api/v1/auth/google/verify-code", json={
         "email": test_email,
-        "code": "1234",
+        "code": real_code,
         "name": "Usuario Verificado"
     })
     assert verify_resp.status_code == 200
@@ -88,7 +103,6 @@ def test_auth_google_otp_request_and_verify(client):
     assert "access_token" in data
     assert data["user"]["email"] == test_email
     assert data["user"]["name"] == "Usuario Verificado"
-
 
 
 def test_auth_register_duplicate(client):
@@ -102,25 +116,37 @@ def test_auth_register_duplicate(client):
 
 
 def test_auth_forgot_and_reset_password(client):
-    """Testa fluxo de recuperação de senha com código OTP."""
+    """Testa fluxo de recuperação de senha com código OTP real e ausência de backdoor."""
+    from src.api.routers.auth_router import _reset_codes
     req_resp = client.post("/api/v1/auth/forgot-password", json={
         "email": "admin@trendecommerce.com"
     })
     assert req_resp.status_code == 200
     assert req_resp.json()["success"] is True
-    assert "admin@trendecommerce.com" in req_resp.json()["message"]
 
-    reset_resp = client.post("/api/v1/auth/reset-password", json={
+    # Código estático '1234' DEVE ser rejeitado (backdoor removido)
+    backdoor_resp = client.post("/api/v1/auth/reset-password", json={
         "email": "admin@trendecommerce.com",
         "code": "1234",
+        "new_password": "novasenhaforte123"
+    })
+    assert backdoor_resp.status_code == 400
+
+    # Validação com o código real gerado
+    real_code = _reset_codes["admin@trendecommerce.com"]
+    reset_resp = client.post("/api/v1/auth/reset-password", json={
+        "email": "admin@trendecommerce.com",
+        "code": real_code,
         "new_password": "novasenhaforte123"
     })
     assert reset_resp.status_code == 200
 
     # Restaurar senha admin
+    client.post("/api/v1/auth/forgot-password", json={"email": "admin@trendecommerce.com"})
+    restore_code = _reset_codes["admin@trendecommerce.com"]
     client.post("/api/v1/auth/reset-password", json={
         "email": "admin@trendecommerce.com",
-        "code": "1234",
+        "code": restore_code,
         "new_password": "admin123"
     })
 
@@ -331,3 +357,42 @@ def test_products_autocomplete(client):
     resp_unreg = client.get("/api/v1/products/autocomplete?q=produto_inexistente_xyz_999&limit=5")
     assert resp_unreg.status_code == 200
     assert resp_unreg.json() == []
+
+def test_protected_admin_routes(client):
+    """Testa que rotas administrativas exigem token JWT válido."""
+    # 1. Tentativa sem token deve retornar 401
+    resp_reseed_anon = client.post("/api/v1/admin/reseed")
+    assert resp_reseed_anon.status_code == 401
+
+    resp_sync_anon = client.post("/api/v1/products/sync-categories")
+    assert resp_sync_anon.status_code == 401
+
+    # 2. Login como admin para obter token
+    login_resp = client.post("/api/v1/auth/login", json={
+        "email": "admin@trendecommerce.com",
+        "password": "admin123"
+    })
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 3. Com token válido, rota administrativa deve permitir acesso
+    resp_reseed_auth = client.post("/api/v1/admin/reseed", headers=headers)
+    assert resp_reseed_auth.status_code == 200
+    assert resp_reseed_auth.json()["status"] == "success"
+
+
+def test_recommendations_top_products_with_real_ml(client):
+    """Testa endpoint de recomendações conectado ao motor preditivo real."""
+    resp = client.get("/api/v1/recommendations/top-products?days=14&limit=5")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_analyzed" in data
+    assert "items" in data
+    if data["items"]:
+        first = data["items"][0]
+        assert "opportunity_score" in first
+        assert "predicted_units" in first
+        assert "estimated_revenue" in first
+        assert "quadrant" in first
+        assert first["predicted_units"] > 0

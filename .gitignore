@@ -45,3 +45,5 @@ data/*.db.bak
 # Models
 models/*.pkl
 models/*.json
+!models/xgboost_demand_v1.json
+!models/features_metadata.json

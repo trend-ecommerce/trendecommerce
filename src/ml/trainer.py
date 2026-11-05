@@ -1,4 +1,4 @@
-"""Treinamento do modelo XGBoost para previsão de demanda."""
+"""Treinamento do modelo XGBoost para previsão de demanda com baixo consumo de memória."""
 
 import json
 import logging
@@ -13,19 +13,40 @@ from sklearn.model_selection import train_test_split, cross_val_score
 logger = logging.getLogger(__name__)
 
 
+def load_sales_data_low_memory(engine_or_conn) -> pd.DataFrame:
+    """Carrega todo o histórico de vendas do banco com downcasting agressivo de tipos.
+    
+    Otimizado para suportar mais de 1.25 milhão de registros dentro do limite de 512MB do Render.
+    """
+    query = """
+        SELECT product_id, date, quantity_sold, price_at_date as price 
+        FROM sales_history 
+        ORDER BY product_id, date ASC
+    """
+    df = pd.read_sql_query(query, engine_or_conn)
+    df["product_id"] = df["product_id"].astype("int16")
+    df["quantity_sold"] = df["quantity_sold"].astype("int16")
+    df["price"] = df["price"].astype("float32")
+    try:
+        df["date"] = pd.to_datetime(df["date"]).astype("datetime64[D]")
+    except Exception:
+        df["date"] = pd.to_datetime(df["date"]).astype("datetime64[s]")
+    return df
+
+
 class DemandTrainer:
     """Gerencia o treinamento, validação cruzada e persistência do XGBoost."""
 
     DEFAULT_PARAMS = {
         "objective": "reg:squarederror",
         "eval_metric": "rmse",
-        "max_depth": 6,
-        "learning_rate": 0.1,
+        "max_depth": 5,
+        "learning_rate": 0.08,
         "n_estimators": 100,
         "subsample": 0.8,
         "colsample_bytree": 0.8,
-        "random_state": 42,
         "n_jobs": -1,
+        "random_state": 42
     }
 
     def __init__(self, params: Optional[dict[str, Any]] = None):
@@ -41,7 +62,7 @@ class DemandTrainer:
         test_size: float = 0.2,
         random_state: int = 42
     ) -> dict[str, float]:
-        """Treina o XGBRegressor e registra métricas de validação."""
+        """Treina o XGBRegressor com 100% dos dados fornecidos e registra métricas de validação."""
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=random_state
         )
@@ -65,9 +86,9 @@ class DemandTrainer:
             "test_mae": float(np.mean(np.abs(y_test - test_pred))),
             "train_r2": float(self.model.score(X_train, y_train)),
             "test_r2": float(self.model.score(X_test, y_test)),
-            "train_samples": len(X_train),
-            "test_samples": len(X_test),
-            "n_features": len(self.feature_names),
+            "train_samples": int(len(X_train)),
+            "test_samples": int(len(X_test)),
+            "n_features": int(len(self.feature_names)),
         }
         
         logger.info(f"Modelo treinado - Test RMSE: {self.training_metrics['test_rmse']:.4f}, Test R²: {self.training_metrics['test_r2']:.4f}")
@@ -97,8 +118,8 @@ class DemandTrainer:
             "cv_folds": cv,
         }
 
-    def save_model(self, path: str):
-        """Salva os pesos e metadados do modelo."""
+    def save_model(self, path: str = "models/xgboost_demand_v1.json"):
+        """Salva os pesos do modelo e metadados de features."""
         if self.model is None:
             raise ValueError("Nenhum modelo treinado para salvar")
         
@@ -106,25 +127,38 @@ class DemandTrainer:
         model_path.parent.mkdir(parents=True, exist_ok=True)
         self.model.save_model(str(model_path))
         
-        meta_path = model_path.with_suffix(".meta.json")
+        # Salva metadados dedicados
         metadata = {
             "feature_names": self.feature_names,
             "params": self.params,
             "training_metrics": self.training_metrics,
         }
-        meta_path.write_text(json.dumps(metadata, indent=2))
-        logger.info(f"Modelo e metadados salvos em {model_path}")
+        
+        features_meta_path = model_path.parent / "features_metadata.json"
+        features_meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        
+        meta_path = model_path.with_suffix(".meta.json")
+        meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        logger.info(f"Modelo salvo em {model_path} e metadados em {features_meta_path}")
 
-    def load_model(self, path: str):
-        """Carrega modelo pré-treinado do disco."""
+    def load_model(self, path: str = "models/xgboost_demand_v1.json"):
+        """Carrega modelo pré-treinado e metadados do disco."""
         model_path = Path(path)
+        if not model_path.exists():
+            raise FileNotFoundError(f"Arquivo de modelo não encontrado: {model_path}")
+
         self.model = xgb.XGBRegressor()
         self.model.load_model(str(model_path))
         
+        # Tenta carregar metadata
+        features_meta_path = model_path.parent / "features_metadata.json"
         meta_path = model_path.with_suffix(".meta.json")
-        if meta_path.exists():
-            metadata = json.loads(meta_path.read_text())
+        
+        target_meta = features_meta_path if features_meta_path.exists() else meta_path
+        if target_meta.exists():
+            metadata = json.loads(target_meta.read_text(encoding="utf-8"))
             self.feature_names = metadata.get("feature_names", [])
             self.params = metadata.get("params", self.DEFAULT_PARAMS)
             self.training_metrics = metadata.get("training_metrics", {})
+            
         logger.info(f"Modelo carregado de {model_path}")

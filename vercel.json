@@ -1,6 +1,10 @@
 {
-  "outputDirectory": "frontend",
+  "cleanUrls": true,
   "rewrites": [
+    {
+      "source": "/api/v1/:path*",
+      "destination": "https://trendecommerce-api.onrender.com/api/v1/:path*"
+    },
     {
       "source": "/(.*)",
       "destination": "/frontend/$1"

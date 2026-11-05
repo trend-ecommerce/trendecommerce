@@ -262,37 +262,59 @@ def get_forecast_ranking(
         for s in sales
     ])
 
-    # Selecionar candidatos líderes por categoria (top 6 por volume histórico) para performance instantânea
-    sales_summary = sales_df.groupby("product_id")["quantity_sold"].sum().reset_index()
-    merged_candidates = products_df.merge(sales_summary, on="product_id", how="left").fillna(0)
-    
-    candidate_ids = set()
-    for _, cat_group in merged_candidates.groupby("category"):
-        top_in_cat = cat_group.sort_values("quantity_sold", ascending=False).head(6)
-        candidate_ids.update(top_in_cat["product_id"].tolist())
+    import numpy as np
 
-    filtered_products_df = products_df[products_df["product_id"].isin(candidate_ids)]
-    forecasts = forecaster.forecast_all_products(filtered_products_df, sales_df, horizon_days=horizon_days)
+    # Projeção preditiva para todos os produtos do catálogo via inferência vetorizada
+    forecasts = forecaster.forecast_all_products(products_df, sales_df, horizon_days=horizon_days)
 
-    # Ordenar por demanda e faturamento projetado
-    sorted_by_demand = sorted(forecasts, key=lambda x: x.total_predicted_units, reverse=True)
+    # Cálculo do Índice de Tração Preditiva (PTI): volume futuro (40%), receita bruta (35%) e aceleração % recente (25%)
+    growth_map = {}
+    for pid, grp in sales_df.groupby("product_id"):
+        grp_sorted = grp.sort_values("date")
+        qty = grp_sorted["quantity_sold"].values
+        if len(qty) >= 14:
+            recent = float(np.mean(qty[-7:]))
+            prior = float(np.mean(qty[-14:-7]))
+            growth = ((recent - prior) / max(1.0, prior)) * 100.0
+        else:
+            growth = 0.0
+        growth_map[int(pid)] = growth
 
-    # Top 7 produtos gerais: Líderes Top 1 de cada nicho/categoria
+    units_arr = np.array([f.total_predicted_units for f in forecasts], dtype=float)
+    rev_arr = np.array([f.total_projected_revenue for f in forecasts], dtype=float)
+    growth_arr = np.array([growth_map.get(f.product_id, 0.0) for f in forecasts], dtype=float)
+
+    u_min, u_max = float(units_arr.min()), float(units_arr.max())
+    r_min, r_max = float(rev_arr.min()), float(rev_arr.max())
+    g_min, g_max = float(growth_arr.min()), float(growth_arr.max())
+
+    norm_units = (units_arr - u_min) / max(1e-5, (u_max - u_min)) * 100.0
+    norm_rev = (rev_arr - r_min) / max(1e-5, (r_max - r_min)) * 100.0
+    norm_growth = (growth_arr - g_min) / max(1e-5, (g_max - g_min)) * 100.0
+
+    pti_scores = 0.40 * norm_units + 0.35 * norm_rev + 0.25 * norm_growth
+    pti_map = {f.product_id: float(pti_scores[idx]) for idx, f in enumerate(forecasts)}
+
+    # Ordenar produtos pelo Índice de Tração Preditiva (PTI)
+    sorted_by_pti = sorted(forecasts, key=lambda x: pti_map.get(x.product_id, 0.0), reverse=True)
+
+    # Top 7 Geral com equilíbrio setorial
     seen_cats_overall = set()
     top_overall = []
-    for f in sorted_by_demand:
+    for f in sorted_by_pti:
         cat = f.category or "Geral"
         if cat not in seen_cats_overall:
             seen_cats_overall.add(cat)
             rank_num = len(top_overall) + 1
+            pti_val = pti_map.get(f.product_id, 0.0)
             if rank_num == 1:
-                reason = f"Líder absoluto de demanda com {f.total_predicted_units} un e faturamento projetado de R$ {f.total_projected_revenue:,.2f} no horizonte de {horizon_days} dias."
+                reason = f"Líder geral de Tração Preditiva (PTI {pti_val:.1f}) com {f.total_predicted_units} un e receita de R$ {f.total_projected_revenue:,.2f} no horizonte de {horizon_days} dias."
                 driver = f"Líder Geral & Tração Máxima em {cat}"
             elif rank_num in [2, 3]:
-                reason = f"Líder no nicho '{cat}' com altíssima velocidade de saída (~{f.daily_average:.1f} un/dia) e picos nos finais de semana."
+                reason = f"Destaque no nicho '{cat}' (PTI {pti_val:.1f}) com velocidade de saída (~{f.daily_average:.1f} un/dia)."
                 driver = f"Líder no segmento de {cat}"
             else:
-                reason = f"Produto #1 no nicho '{cat}' com performance consistente e margem de segurança estável."
+                reason = f"Top performer em '{cat}' (PTI {pti_val:.1f}) com demanda consistente e rentabilidade estável."
                 driver = f"Destaque em {cat}"
 
             top_overall.append(RankingForecastItem(
@@ -309,12 +331,12 @@ def get_forecast_ranking(
             if len(top_overall) >= 7:
                 break
 
-    # Se ainda houver vagas para 7 e poucas categorias distintas, preenche com os próximos melhores
     if len(top_overall) < 7:
         seen_pids = {item.product_id for item in top_overall}
-        for f in sorted_by_demand:
+        for f in sorted_by_pti:
             if f.product_id not in seen_pids:
                 seen_pids.add(f.product_id)
+                pti_val = pti_map.get(f.product_id, 0.0)
                 top_overall.append(RankingForecastItem(
                     rank=len(top_overall) + 1,
                     product_id=f.product_id,
@@ -323,13 +345,13 @@ def get_forecast_ranking(
                     price=f.unit_price,
                     projected_units=f.total_predicted_units,
                     projected_revenue=f.total_projected_revenue,
-                    rank_reason=f"Top performer com {f.total_predicted_units} unidades projetadas.",
-                    key_driver="Alta Tração de Demanda"
+                    rank_reason=f"Top performer por tração (PTI {pti_val:.1f}) com {f.total_predicted_units} un projetadas.",
+                    key_driver="Alta Tração Preditiva"
                 ))
                 if len(top_overall) >= 7:
                     break
 
-    # Agrupar por categoria e pegar top 5 com justificativas
+    # Agrupar por categoria e selecionar Top 5 por PTI
     by_cat_dict = {}
     for f in forecasts:
         cat = f.category or "Geral"
@@ -341,7 +363,7 @@ def get_forecast_ranking(
     top_by_category["GERAIS"] = top_overall[:5]
 
     for cat, list_items in by_cat_dict.items():
-        sorted_cat = sorted(list_items, key=lambda x: x.total_predicted_units, reverse=True)
+        sorted_cat = sorted(list_items, key=lambda x: pti_map.get(x.product_id, 0.0), reverse=True)
         top_by_category[cat] = [
             RankingForecastItem(
                 rank=i + 1,
@@ -351,7 +373,7 @@ def get_forecast_ranking(
                 price=f.unit_price,
                 projected_units=f.total_predicted_units,
                 projected_revenue=f.total_projected_revenue,
-                rank_reason=f"Top #{i+1} da categoria '{cat}' com média de {f.daily_average:.1f} un/dia e receita de R$ {f.total_projected_revenue:,.2f}.",
+                rank_reason=f"Top #{i+1} de '{cat}' por Tração Preditiva (PTI {pti_map.get(f.product_id, 0.0):.1f}), média de {f.daily_average:.1f} un/dia e receita de R$ {f.total_projected_revenue:,.2f}.",
                 key_driver=f"Liderança no segmento de {cat}"
             )
             for i, f in enumerate(sorted_cat[:5])

@@ -263,50 +263,40 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
 def login_with_google(data: GoogleAuthRequest, db: Session = Depends(get_db)):
     """
     Autentica ou cadastra um usuário usando credenciais do Google Identity Services (GIS).
-    Valida o Google ID Token usando google-auth e retorna o Token JWT da aplicação.
+    Exige obrigatoriamente a presença e a verificação criptográfica do token usando google-auth.
+    Não permite login apenas passando e-mail sem validação de credencial.
     """
     import os
-    import base64
-    import json
     import secrets
+    from google.oauth2 import id_token
+    from google.auth.transport import requests as google_requests
 
     token_str = data.token or data.credential
-    email = data.email
-    name = data.name
+    if not token_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token ou credencial do Google é obrigatório para autenticação."
+        )
 
-    if token_str:
-        client_id = os.getenv("GOOGLE_CLIENT_ID", "33242244365-ubjiqb1h7thh0t6n5hdg3e3ugsuebm6e.apps.googleusercontent.com")
-        try:
-            from google.oauth2 import id_token
-            from google.auth.transport import requests as google_requests
-
-            idinfo = id_token.verify_oauth2_token(
-                token_str,
-                google_requests.Request(),
-                client_id
-            )
-            email = idinfo.get("email")
-            name = idinfo.get("name") or idinfo.get("given_name")
-        except Exception:
-            try:
-                parts = token_str.split(".")
-                if len(parts) >= 2:
-                    payload_b64 = parts[1]
-                    payload_b64 += "=" * ((4 - len(payload_b64) % 4) % 4)
-                    payload_json = base64.urlsafe_b64decode(payload_b64).decode("utf-8")
-                    payload = json.loads(payload_json)
-                    email = payload.get("email") or email
-                    name = payload.get("name") or payload.get("given_name") or name
-            except Exception:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token do Google inválido ou expirado."
-                )
+    client_id = os.getenv("GOOGLE_CLIENT_ID", "33242244365-ubjiqb1h7thh0t6n5hdg3e3ugsuebm6e.apps.googleusercontent.com")
+    try:
+        idinfo = id_token.verify_oauth2_token(
+            token_str,
+            google_requests.Request(),
+            client_id
+        )
+        email = idinfo.get("email")
+        name = idinfo.get("name") or idinfo.get("given_name") or data.name
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token do Google inválido ou expirado: {str(e)}"
+        )
 
     if not email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Não foi possível identificar o email da conta Google."
+            detail="Não foi possível identificar o email da conta Google a partir do token verificado."
         )
 
     email_clean = str(email).lower().strip()
@@ -359,10 +349,7 @@ def request_google_verification_code(request: GoogleRequestCodeRequest):
 
     email_sent, status_msg = send_google_verification_email(email_key, otp_code)
 
-    if email_sent:
-        message = f"Código de verificação enviado para {email_key}! Verifique sua caixa de entrada e spam."
-    else:
-        message = f"Código gerado para {email_key}: [{otp_code}]. (Configure SMTP no .env para envio real). Código de teste: 1234"
+    message = f"Código de verificação enviado para {email_key}! Verifique sua caixa de entrada e spam."
 
     print(f"\n[🔐 VALIDAÇÃO GOOGLE] Email: {email_key} | Código OTP: {otp_code} | Status: {status_msg}\n")
 
@@ -382,7 +369,7 @@ def verify_google_code_and_login(request: GoogleVerifyCodeRequest, db: Session =
     stored_data = _google_otp_codes.get(email_key)
     expected_code = stored_data.get("code") if stored_data else None
 
-    if request.code != expected_code and request.code != "1234":
+    if not expected_code or request.code != expected_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código de verificação incorreto ou expirado. Verifique seu e-mail e tente novamente."
@@ -444,10 +431,7 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
     
     email_sent, status_msg = send_otp_email(request.email.lower(), otp_code)
     
-    if email_sent:
-        message = f"Código de segurança enviado para {request.email}! Verifique sua caixa de entrada e spam."
-    else:
-        message = f"Código gerado para {request.email}: [{otp_code}]. (Configure SMTP no .env para envio real). Código de teste: 1234"
+    message = f"Código de segurança enviado para {request.email}! Verifique sua caixa de entrada e spam."
     
     print(f"\n[🔑 RECUPERAÇÃO DE SENHA] Email: {request.email} | Código OTP: {otp_code} | Status Envio: {status_msg}\n")
 
@@ -463,7 +447,7 @@ def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(g
     email_key = request.email.lower()
     expected_code = _reset_codes.get(email_key)
 
-    if request.code != expected_code and request.code != "1234":
+    if not expected_code or request.code != expected_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código de recuperação inválido ou expirado."

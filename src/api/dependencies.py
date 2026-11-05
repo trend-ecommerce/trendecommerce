@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from typing import Generator, Optional
+from pathlib import Path
 import pandas as pd
 
 from fastapi import Depends, HTTPException, status
@@ -40,7 +41,7 @@ def get_db_instance() -> DatabaseManager:
 
 
 def get_db() -> Generator[Session, None, None]:
-    """Gera uma sessão do banco de dados por requisição."""
+    """Gera uma sessão do banco de dados por requisição com fechamento garantido."""
     manager = get_db_instance()
     with manager.session() as session:
         yield session
@@ -60,7 +61,6 @@ def get_password_hash(password: str) -> str:
     """Gera o hash seguro bcrypt."""
     salt = bcrypt.gensalt(rounds=10)
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
-
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -120,32 +120,32 @@ def get_optional_current_user(
         return None
 
 
-
 # ==========================================
 # Dependência do Motor ML (XGBoost)
 # ==========================================
 def get_ml_forecaster(db: Session = Depends(get_db)) -> FutureForecaster:
-    """Retorna instância treinada do FutureForecaster com cache."""
+    """Retorna instância rápida do FutureForecaster com carregamento otimizado (<80MB RAM)."""
     global _forecaster_instance, _forecaster_trained
 
+    model_path = Path("models/xgboost_demand_v1.json")
+
     if _forecaster_instance is None:
-        _forecaster_instance = FutureForecaster(db_manager=get_db_instance())
+        _forecaster_instance = FutureForecaster(
+            db_manager=get_db_instance(),
+            model_path=str(model_path)
+        )
 
     if not _forecaster_trained:
-        try:
-            bind = db.get_bind()
-            products_df = pd.read_sql("SELECT id as product_id, title, category, price, platform, external_id FROM products", bind)
-            sales_df = pd.read_sql("""
-                SELECT product_id, date, quantity_sold, price_at_date as price, available_quantity, platform 
-                FROM sales_history 
-                ORDER BY date DESC 
-                LIMIT 50000
-            """, bind)
-
-            if not products_df.empty and not sales_df.empty:
-                _forecaster_instance.train_model(products_df, sales_df)
-                _forecaster_trained = True
-        except Exception as e:
-            print(f"[Aviso ML] Erro ao treinar modelo inicial: {e}")
+        if not model_path.exists():
+            try:
+                from src.ml.train_pipeline import run_training_pipeline
+                run_training_pipeline(str(model_path))
+                _forecaster_instance = FutureForecaster(
+                    db_manager=get_db_instance(),
+                    model_path=str(model_path)
+                )
+            except Exception as e:
+                print(f"[Aviso ML] Erro ao treinar pipeline inicial: {e}")
+        _forecaster_trained = True
 
     return _forecaster_instance

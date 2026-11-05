@@ -2,10 +2,14 @@ function configurarToggleSenha(inputId, buttonId) {
     const senha = document.getElementById(inputId);
     const toggleSenha = document.getElementById(buttonId);
 
-    // Algumas páginas não possuem campo de senha.
+    // Algumas páginas não possuem campo de senha ou o botão já foi inicializado
     if (!senha || !toggleSenha) {
         return;
     }
+    if (toggleSenha.dataset.toggleInitialized === "true") {
+        return;
+    }
+    toggleSenha.dataset.toggleInitialized = "true";
 
     toggleSenha.addEventListener("click", (e) => {
         e.preventDefault();
