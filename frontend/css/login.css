@@ -380,16 +380,17 @@ textarea {
 .codigo-resend button {
     background: transparent;
     border: none;
-    color: #00d4ff;
+    color: #A9B8C7;
     cursor: pointer;
     font-size: inherit;
-    font-weight: 600;
+    font-weight: 500;
     padding: 0;
-    text-decoration: underline;
+    text-decoration: none;
+    transition: color 0.2s ease;
 }
 
 .codigo-resend button:hover {
-    color: #ffffff;
+    color: #fff;
 }
 
 /* Toast Container */
