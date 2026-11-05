@@ -521,128 +521,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Modal de Exportação Executiva
+    // Exportação direta para Excel (.CSV)
     async function handleExportReport() {
-        const modal = document.getElementById('reportModalOverlay');
-        const contentArea = document.getElementById('reportModalContentArea');
-        const horizonBadge = document.getElementById('reportModalHorizonBadge');
-        if (!modal || !contentArea) return;
-
-        modal.style.display = 'flex';
-        if (horizonBadge) horizonBadge.textContent = `HORIZONTE: ${state.horizonDays} DIAS`;
-
-        contentArea.innerHTML = `
-            <div style="text-align: center; padding: 50px 20px; color: #8da2bd;">
-                <div style="font-size: 32px; margin-bottom: 14px; color: #00d4ff;">
-                    <i class="ph ph-spinner ph-spin"></i>
-                </div>
-                <p style="font-size: 15px; font-weight: 600;">Processando modelo preditivo e compilando dados...</p>
-            </div>
-        `;
-
+        const btnExport = document.getElementById('btnExportExcel');
+        if (btnExport) {
+            btnExport.disabled = true;
+            btnExport.style.opacity = '0.7';
+        }
         try {
             const summary = await window.apiService.forecast.summary(state.horizonDays);
-            renderReportModal(summary);
             triggerCsvDownload(summary);
         } catch (err) {
-            contentArea.innerHTML = `
-                <div style="text-align: center; padding: 40px 20px; color: #ff4d6d;">
-                    <p>Erro ao exportar relatório: ${err.message}</p>
-                </div>
-            `;
-        }
-
-        const closeBtn = document.getElementById('reportModalCloseBtn');
-        if (closeBtn) closeBtn.onclick = () => { modal.style.display = 'none'; };
-        modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
-    }
-
-    function renderReportModal(summary) {
-        const contentArea = document.getElementById('reportModalContentArea');
-        if (!contentArea || !summary) return;
-
-        let tableRowsHtml = '';
-        (summary.items || []).forEach(it => {
-            tableRowsHtml += `
-                <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); color: #e2e8f0; transition: background 0.2s;">
-                    <td style="padding: 8px 12px; color: #8da2bd;">#${it.product_id}</td>
-                    <td style="padding: 8px 12px; font-weight: 600;">${it.product_title}</td>
-                    <td style="padding: 8px 12px; color: #94a3b8;">${it.category}</td>
-                    <td style="padding: 8px 12px; text-align: right;">R$ ${(it.unit_price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td style="padding: 8px 12px; text-align: center; color: #00e5ff; font-weight: 700;">${it.total_predicted_units} un</td>
-                    <td style="padding: 8px 12px; text-align: right; color: #10b981; font-weight: 600;">R$ ${(it.total_projected_revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td style="padding: 8px 12px; text-align: center; color: #f59e0b; font-weight: 700;">${it.recommended_stock_buffer} un</td>
-                </tr>
-            `;
-        });
-
-        contentArea.innerHTML = `
-            <div style="display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 16px;">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
-                    <div style="background: rgba(0, 212, 255, 0.05); border: 1px solid rgba(0, 212, 255, 0.18); border-radius: 10px; padding: 12px 16px;">
-                        <div style="font-size: 11px; color: #8da2bd; text-transform: uppercase; font-weight: 700;">Produtos Analisados</div>
-                        <div style="font-size: 22px; font-weight: 800; color: #ffffff; margin-top: 4px;">
-                            ${summary.total_products} <span style="font-size: 12px; color: #8da2bd; font-weight: 500;">itens</span>
-                        </div>
-                    </div>
-                    <div style="background: rgba(0, 212, 255, 0.05); border: 1px solid rgba(0, 212, 255, 0.18); border-radius: 10px; padding: 12px 16px;">
-                        <div style="font-size: 11px; color: #8da2bd; text-transform: uppercase; font-weight: 700;">Demanda Projetada</div>
-                        <div style="font-size: 22px; font-weight: 800; color: #00f0ff; margin-top: 4px;">
-                            ${(summary.total_predicted_units || 0).toLocaleString('pt-BR')} <span style="font-size: 12px; color: #8da2bd; font-weight: 500;">un</span>
-                        </div>
-                    </div>
-                    <div style="background: rgba(0, 212, 255, 0.05); border: 1px solid rgba(0, 212, 255, 0.18); border-radius: 10px; padding: 12px 16px;">
-                        <div style="font-size: 11px; color: #8da2bd; text-transform: uppercase; font-weight: 700;">Faturamento Projetado</div>
-                        <div style="font-size: 22px; font-weight: 800; color: #10b981; margin-top: 4px;">
-                            R$ ${(summary.total_projected_revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
-                    </div>
-                </div>
-
-                <div style="flex: 1; overflow-y: auto; max-height: 45vh; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; background: rgba(2, 8, 20, 0.55);">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
-                        <thead>
-                            <tr style="background: rgba(0, 212, 255, 0.12); color: #00f0ff; position: sticky; top: 0; z-index: 2;">
-                                <th style="padding: 10px 12px; border-bottom: 1px solid rgba(0, 212, 255, 0.2);">ID</th>
-                                <th style="padding: 10px 12px; border-bottom: 1px solid rgba(0, 212, 255, 0.2);">Produto</th>
-                                <th style="padding: 10px 12px; border-bottom: 1px solid rgba(0, 212, 255, 0.2);">Categoria</th>
-                                <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid rgba(0, 212, 255, 0.2);">Preço Unit.</th>
-                                <th style="padding: 10px 12px; text-align: center; border-bottom: 1px solid rgba(0, 212, 255, 0.2);">Demanda Prevista</th>
-                                <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid rgba(0, 212, 255, 0.2);">Faturamento</th>
-                                <th style="padding: 10px 12px; text-align: center; border-bottom: 1px solid rgba(0, 212, 255, 0.2);">Estoque Rec.</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tableRowsHtml}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
-                    <span style="font-size: 11px; color: #8da2bd;">
-                        * Exibindo dados consolidados de projeção calculados pelo modelo XGBoost.
-                    </span>
-                    <div style="display: flex; gap: 10px;">
-                        <button type="button" class="btn-export-excel" id="btnReportDownloadCsv" style="padding: 8px 18px; font-size: 12px; display: flex; align-items: center; gap: 6px;">
-                            <i class="ph ph-download-simple" style="font-size: 16px;"></i> BAIXAR EXCEL (.CSV)
-                        </button>
-                        <button type="button" class="btn-modal-close" id="reportModalCloseFooterBtn" style="padding: 8px 16px; font-size: 12px;">
-                            FECHAR
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        const csvBtn = document.getElementById('btnReportDownloadCsv');
-        if (csvBtn) csvBtn.onclick = () => triggerCsvDownload(summary);
-
-        const closeFooterBtn = document.getElementById('reportModalCloseFooterBtn');
-        if (closeFooterBtn) {
-            closeFooterBtn.onclick = () => {
-                const modal = document.getElementById('reportModalOverlay');
-                if (modal) modal.style.display = 'none';
-            };
+            console.error('Erro ao exportar relatório:', err);
+        } finally {
+            if (btnExport) {
+                btnExport.disabled = false;
+                btnExport.style.opacity = '1';
+            }
         }
     }
 

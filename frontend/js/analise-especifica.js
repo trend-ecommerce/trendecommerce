@@ -198,7 +198,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             renderHeader();
             renderKPIs();
-            renderXAI();
             drawChart();
         } catch (err) {
             console.error('Erro na previsão:', err);
@@ -225,70 +224,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (kpiRevenue) kpiRevenue.textContent = f ? `R$ ${f.total_projected_revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 464.698,86';
         if (kpiAverage) kpiAverage.textContent = f ? `${f.daily_average} un/dia` : '15.3 un/dia';
         if (kpiBuffer) kpiBuffer.textContent = f ? `${f.recommended_stock_buffer} un` : '135 un';
-    }
-
-    function renderXAI() {
-        const f = state.forecast;
-        const xaiCard = document.getElementById('analiseExplainabilityCard');
-        if (!xaiCard) return;
-
-        if (!f || !f.explanation) {
-            xaiCard.style.display = 'none';
-            return;
-        }
-
-        xaiCard.style.display = 'block';
-
-        const driverEl = document.getElementById('xaiPrimaryDriver');
-        const headlineEl = document.getElementById('xaiHeadline');
-        const summaryEl = document.getElementById('xaiSummary');
-        const factorsGrid = document.getElementById('xaiFactorsGrid');
-
-        if (driverEl) driverEl.textContent = f.explanation.primary_driver || 'Histórico Recente';
-        if (headlineEl) {
-            headlineEl.innerHTML = `Projeção de <span class="text-cyan">${f.total_predicted_units} unidades</span> nos próximos ${state.horizonDays} dias`;
-        }
-        if (summaryEl) summaryEl.textContent = f.explanation.summary || '';
-
-        if (factorsGrid) {
-            const iconClasses = [
-                'ph ph-calendar-check',
-                'ph ph-chart-line-up',
-                'ph ph-tag',
-                'ph ph-magnifying-glass'
-            ];
-            const iconColors = ['#38bdf8', '#10b981', '#f59e0b', '#a855f7'];
-
-            factorsGrid.innerHTML = (f.explanation.factors || []).map((factor, idx) => {
-                const impactClean = (factor.impact || 'positivo').toLowerCase().replace(/[^a-z]/g, '');
-                return `
-                    <div class="ai-factor-card-v2">
-                        <div class="factor-top-row">
-                            <div class="factor-icon-title">
-                                <div class="factor-icon-wrap" style="color: ${iconColors[idx % iconColors.length]};">
-                                    <i class="${iconClasses[idx % iconClasses.length]}"></i>
-                                </div>
-                                <span class="factor-title-text">${factor.name.split('(')[0].trim()}</span>
-                            </div>
-                            <span class="factor-impact-badge impact-${impactClean}">
-                                ${factor.weight_pct}%
-                            </span>
-                        </div>
-
-                        <div class="factor-progress-track">
-                            <div class="factor-progress-fill fill-${impactClean}" style="width: ${factor.weight_pct}%;"></div>
-                        </div>
-
-                        <div class="factor-impact-label">
-                            <span>Impacto:</span>
-                            <strong>${factor.impact}</strong>
-                        </div>
-
-                        <p class="factor-description-text">${factor.description}</p>
-                    </div>
-                `;
-            }).join('');
-        }
     }
 
     function drawChart() {

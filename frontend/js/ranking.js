@@ -8,8 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         rankingData: { top_overall: [], top_by_category: {} },
         categories: [],
         selectedCategory: 'GERAIS',
-        catDropdownOpen: false,
-        selectedItemModal: null
+        catDropdownOpen: false
     };
 
     const leftList = document.getElementById('rankingTop7List');
@@ -51,7 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         leftList.innerHTML = items.slice(0, 7).map(item => `
-            <div class="ranking-card-item clickable" data-id="${item.product_id}" title="Clique para ver por que este produto está no ranking e como vai vender">
+            <div class="ranking-card-item" data-id="${item.product_id}">
                 <div class="item-left">
                     <span class="item-num">${item.rank}.</span>
                     <div class="item-info">
@@ -63,20 +62,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ` : ''}
                     </div>
                 </div>
-                <div class="item-right">
-                    <span class="item-units">${item.predicted_units} un</span>
+                <div class="item-right" style="text-align: right; white-space: nowrap; flex-shrink: 0; margin-left: 12px;">
+                    <span class="item-units">${item.projected_units ?? item.predicted_units ?? 0} un</span>
                     <span class="item-price">R$ ${item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                 </div>
             </div>
         `).join('');
-
-        leftList.querySelectorAll('.ranking-card-item').forEach(el => {
-            el.onclick = () => {
-                const pid = parseInt(el.getAttribute('data-id'));
-                const it = items.find(i => i.product_id === pid);
-                if (it) openXAIModal(it);
-            };
-        });
     }
 
     function renderByCategory() {
@@ -99,7 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         rightList.innerHTML = items.map(item => `
-            <div class="ranking-card-item clickable" data-id="${item.product_id}" title="Clique para ver por que este produto está no ranking e como vai vender">
+            <div class="ranking-card-item" data-id="${item.product_id}">
                 <div class="item-left">
                     <span class="item-num">${item.rank}.</span>
                     <div class="item-info">
@@ -111,20 +102,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ` : ''}
                     </div>
                 </div>
-                <div class="item-right">
-                    <span class="item-units">${item.predicted_units} un</span>
+                <div class="item-right" style="text-align: right; white-space: nowrap; flex-shrink: 0; margin-left: 12px;">
+                    <span class="item-units">${item.projected_units ?? item.predicted_units ?? 0} un</span>
                     <span class="item-price">R$ ${item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                 </div>
             </div>
         `).join('');
-
-        rightList.querySelectorAll('.ranking-card-item').forEach(el => {
-            el.onclick = () => {
-                const pid = parseInt(el.getAttribute('data-id'));
-                const it = items.find(i => i.product_id === pid);
-                if (it) openXAIModal(it);
-            };
-        });
     }
 
     function renderCategoriesMenu() {
@@ -186,33 +169,5 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ? state.selectedCategory.toUpperCase()
                 : 'CATEGORIAS';
         }
-    }
-
-    function openXAIModal(item) {
-        state.selectedItemModal = item;
-        const modal = document.getElementById('rankingItemModalOverlay');
-        if (!modal) return;
-
-        document.getElementById('rankingModalRankBadge').innerHTML = `<i class="ph ph-trophy" style="font-size: 13px; margin-right: 4px;"></i> #${item.rank} NO RANKING`;
-        document.getElementById('rankingModalCategoryBadge').textContent = item.category || 'Geral';
-        document.getElementById('rankingModalProdTitle').textContent = item.title;
-        document.getElementById('rankingModalReasonText').textContent = item.rank_reason || `Produto classificado na posição ${item.rank} com alta probabilidade de conversão e forte tração de mercado nos próximos 30 dias.`;
-
-        document.getElementById('rankingModalPredictedUnits').textContent = `${item.predicted_units} unidades`;
-        document.getElementById('rankingModalProjectedRevenue').textContent = `R$ ${item.projected_revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-        document.getElementById('rankingModalUnitPrice').textContent = `R$ ${item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-        document.getElementById('rankingModalKeyDriver').textContent = item.key_driver || 'Sazonalidade & Momentum';
-
-        document.getElementById('rankingModalDynamicsDesc').textContent = `A projeção considera uma média diária consistente de ${(item.predicted_units / 30).toFixed(1)} un/dia, com picos impulsionados por ${(item.key_driver || 'tendência orgânica').toLowerCase()}. A recomendação é manter estoque de segurança calibrado em pelo menos ${Math.round(item.predicted_units * 1.25)} unidades para evitar ruptura.`;
-
-        modal.style.display = 'flex';
-
-        const closeBtn = document.getElementById('rankingModalCloseBtn');
-        const footerCloseBtn = document.getElementById('rankingModalFooterCloseBtn');
-        if (closeBtn) closeBtn.onclick = () => { modal.style.display = 'none'; };
-        if (footerCloseBtn) footerCloseBtn.onclick = () => { modal.style.display = 'none'; };
-        modal.onclick = (e) => {
-            if (e.target === modal) modal.style.display = 'none';
-        };
     }
 });
