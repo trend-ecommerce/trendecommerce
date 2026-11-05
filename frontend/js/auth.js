@@ -113,11 +113,9 @@ function setupLoginForm() {
                     resendBtn.disabled = true;
                     resendBtn.textContent = 'Enviando...';
                     try {
-                        const res = await window.apiService.auth.resendVerification(targetEmail);
-                        window.showToast?.(res.message || 'E-mail de confirmação reenviado!', 'success', 5000);
+                        await window.apiService.auth.resendVerification(targetEmail);
                         resendBtn.textContent = 'E-mail reenviado!';
                     } catch (err) {
-                        window.showToast?.(err.message || 'Aguarde alguns instantes para reenviar.', 'warning');
                         resendBtn.disabled = false;
                         resendBtn.textContent = 'Reenviar e-mail de confirmação';
                     }
@@ -139,7 +137,6 @@ function setupLoginForm() {
             'success',
             '✅ <strong>E-mail confirmado com sucesso!</strong> Sua conta foi ativada. Digite sua senha para entrar.'
         );
-        window.showToast?.('E-mail verificado com sucesso! Faça seu login.', 'success', 5000);
     } else if (params.get('pending_verify') === '1' && pendingEmail) {
         showVerificationBanner(
             'info',
@@ -160,12 +157,10 @@ function setupLoginForm() {
         const emailCheck = validateRealEmailClient(email);
         if (!emailCheck.valid) {
             if (emailErr) emailErr.textContent = emailCheck.message;
-            window.showToast?.(emailCheck.message, 'error');
             hasError = true;
         }
         if (!password) {
             if (passErr) passErr.textContent = 'Informe sua senha.';
-            if (!hasError) window.showToast?.('Informe sua senha.', 'error');
             hasError = true;
         }
         if (hasError) return;
@@ -181,13 +176,10 @@ function setupLoginForm() {
         }, 3500);
 
         try {
-            const data = await window.apiService.auth.login(email, password);
+            await window.apiService.auth.login(email, password);
             clearTimeout(timer);
             sessionStorage.removeItem('pending_verify_email');
-            window.showToast?.(`Bem-vindo, ${data.user.email}!`, 'success');
-            setTimeout(() => {
-                window.location.replace('ia-preditiva.html');
-            }, 600);
+            window.location.replace('ia-preditiva.html');
         } catch (err) {
             clearTimeout(timer);
             if (coldStartNotice) coldStartNotice.style.display = 'none';
@@ -201,7 +193,6 @@ function setupLoginForm() {
             } else if (passErr) {
                 passErr.textContent = msg;
             }
-            window.showToast?.(msg, 'error', 5000);
         } finally {
             clearTimeout(timer);
             if (submitBtn) {
@@ -244,17 +235,14 @@ function setupRegisterForm() {
         const emailCheck = validateRealEmailClient(email);
         if (!emailCheck.valid) {
             if (emailErr) emailErr.textContent = emailCheck.message;
-            window.showToast?.(emailCheck.message, 'error');
             hasError = true;
         }
         if (password.length < 6) {
             if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
-            if (!hasError) window.showToast?.('A senha deve ter no mínimo 6 caracteres.', 'error');
             hasError = true;
         }
         if (password !== confirm) {
             if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
-            if (!hasError) window.showToast?.('As senhas não coincidem.', 'error');
             hasError = true;
         }
         if (hasError) return;
@@ -267,17 +255,9 @@ function setupRegisterForm() {
         try {
             await window.apiService.auth.register(email, password);
             sessionStorage.setItem('pending_verify_email', email.toLowerCase());
-            window.showToast?.(
-                `Enviamos um e-mail de confirmação para ${email}! Confirme na sua caixa de entrada para ativar o login.`,
-                'info',
-                6000
-            );
-            setTimeout(() => {
-                window.location.replace('login.html?pending_verify=1');
-            }, 1400);
+            window.location.replace('login.html?pending_verify=1');
         } catch (err) {
             if (emailErr) emailErr.textContent = err.message || 'Erro ao realizar cadastro.';
-            window.showToast?.(err.message || 'Erro ao cadastrar.', 'error');
         } finally {
             if (submitBtn) {
                 submitBtn.disabled = false;
@@ -305,7 +285,6 @@ function setupRecoveryStep1() {
         const emailCheck = validateRealEmailClient(email);
         if (!emailCheck.valid) {
             if (errEl) errEl.textContent = emailCheck.message;
-            window.showToast?.(emailCheck.message, 'error');
             return;
         }
 
@@ -315,17 +294,12 @@ function setupRecoveryStep1() {
         }
 
         try {
-            const res = await window.apiService.auth.forgotPassword(email);
+            await window.apiService.auth.forgotPassword(email);
             sessionStorage.setItem('recovery_email', email);
-            window.showToast?.(res.message || 'Código enviado com sucesso!', 'success', 5000);
-            
             const targetPage = pagePath.includes('recuperarsenha') ? 'codigosenha.html' : 'codigosenha.html';
-            setTimeout(() => {
-                window.location.href = targetPage;
-            }, 800);
+            window.location.href = targetPage;
         } catch (err) {
             if (errEl) errEl.textContent = err.message || 'Email não encontrado.';
-            window.showToast?.(err.message || 'Erro ao enviar código.', 'error');
         } finally {
             if (submitBtn) {
                 submitBtn.disabled = false;
@@ -384,37 +358,47 @@ function setupRecoveryStep2() {
     if (resendBtn) {
         resendBtn.onclick = async () => {
             if (!recoveryEmail) {
-                window.showToast?.('Email não identificado. Reinicie a recuperação.', 'error');
+                if (errEl) {
+                    errEl.style.color = '#ff6b81';
+                    errEl.textContent = 'Email não identificado. Reinicie a recuperação.';
+                }
                 return;
             }
             try {
                 const res = await window.apiService.auth.forgotPassword(recoveryEmail);
-                window.showToast?.(res.message || 'Código reenviado!', 'info', 5000);
+                if (errEl) {
+                    errEl.style.color = '#34d399';
+                    errEl.textContent = res.message || 'Código reenviado com sucesso!';
+                }
                 otpInputs.forEach(i => { if (i) i.value = ''; });
                 if (otpInputs[0]) otpInputs[0].focus();
             } catch (err) {
-                window.showToast?.(err.message, 'error');
+                if (errEl) {
+                    errEl.style.color = '#ff6b81';
+                    errEl.textContent = err.message || 'Erro ao reenviar código.';
+                }
             }
         };
     }
 
     form.onsubmit = (e) => {
         e.preventDefault();
-        if (errEl) errEl.textContent = '';
+        if (errEl) {
+            errEl.style.color = '';
+            errEl.textContent = '';
+        }
         const code = otpInputs.map(i => i?.value || '').join('');
         if (code.length < 4) {
-            if (errEl) errEl.textContent = 'Digite os 4 dígitos do código de verificação.';
-            window.showToast?.('Digite os 4 dígitos do código.', 'error');
+            if (errEl) {
+                errEl.style.color = '#ff6b81';
+                errEl.textContent = 'Digite os 4 dígitos do código de verificação.';
+            }
             return;
         }
 
         sessionStorage.setItem('recovery_code', code);
-        window.showToast?.('Código confirmado! Defina sua nova senha.', 'success');
-        
         const targetPage = pagePath.includes('codigosenha') ? 'novasenha.html' : 'novasenha.html';
-        setTimeout(() => {
-            window.location.href = targetPage;
-        }, 600);
+        window.location.href = targetPage;
     };
 }
 
@@ -449,17 +433,15 @@ function setupRecoveryStep3() {
 
         let hasError = false;
         if (!email) {
-            window.showToast?.('Informe o email.', 'error');
+            if (passErr) passErr.textContent = 'Informe o email.';
             hasError = true;
         }
         if (newPass.length < 6) {
             if (passErr) passErr.textContent = 'A senha deve ter no mínimo 6 caracteres.';
-            if (!hasError) window.showToast?.('A senha deve ter no mínimo 6 caracteres.', 'error');
             hasError = true;
         }
         if (newPass !== confirmPass) {
             if (confirmErr) confirmErr.textContent = 'As senhas não coincidem.';
-            if (!hasError) window.showToast?.('As senhas não coincidem.', 'error');
             hasError = true;
         }
         if (hasError) return;
@@ -470,16 +452,12 @@ function setupRecoveryStep3() {
         }
 
         try {
-            const res = await window.apiService.auth.resetPassword(email, storedCode, newPass);
+            await window.apiService.auth.resetPassword(email, storedCode, newPass);
             sessionStorage.removeItem('recovery_email');
             sessionStorage.removeItem('recovery_code');
-            window.showToast?.(res.message || 'Senha alterada com sucesso!', 'success');
-            setTimeout(() => {
-                window.location.replace('login.html');
-            }, 800);
+            window.location.replace('login.html');
         } catch (err) {
             if (passErr) passErr.textContent = err.message || 'Erro ao redefinir senha.';
-            window.showToast?.(err.message || 'Erro ao redefinir senha.', 'error');
         } finally {
             if (submitBtn) {
                 submitBtn.disabled = false;

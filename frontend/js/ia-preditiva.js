@@ -541,7 +541,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
 
         try {
-            window.showToast?.('Carregando relatório consolidado...', 'info');
             const summary = await window.apiService.forecast.summary(state.horizonDays);
             renderReportModal(summary);
             triggerCsvDownload(summary);
@@ -551,7 +550,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <p>Erro ao exportar relatório: ${err.message}</p>
                 </div>
             `;
-            window.showToast?.('Erro ao exportar relatório: ' + err.message, 'error');
         }
 
         const closeBtn = document.getElementById('reportModalCloseBtn');
@@ -650,7 +648,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function triggerCsvDownload(summary) {
         if (!summary || !summary.items || summary.items.length === 0) {
-            window.showToast?.('Nenhum dado disponível para exportar.', 'error');
             return;
         }
 
@@ -689,7 +686,5 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
         }, 300);
-
-        window.showToast?.(`Relatório Excel / CSV (${summary.horizon_days} dias) baixado com sucesso!`, 'success');
     }
 });

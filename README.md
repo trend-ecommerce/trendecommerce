@@ -152,8 +152,7 @@ trendecommerce/
 │   │   ├── effects.js               # Efeitos visuais de fundo
 │   │   ├── ia-preditiva.js          # Controlador da visão principal e comparador A vs B
 │   │   ├── ranking.js               # Controlador do ranking preditivo de 30 dias
-│   │   ├── sidebar.js               # Navegação lateral e perfil do usuário
-│   │   └── toast.js                 # Sistema de notificações visuais
+│   │   └── sidebar.js               # Navegação lateral e perfil do usuário
 │   ├── analise-especifica.html      # Página de Análise Específica de Produtos
 │   ├── cadastro.html                # Página de Criação de Conta
 │   ├── codigo-verificacao.html      # Página de Validação de Código OTP

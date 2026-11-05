@@ -1617,54 +1617,7 @@ canvas {
 .text-cyan { color: #00d4ff !important; }
 .text-emerald { color: #10b981 !important; }
 
-/* ==========================================================
-   Toasts Notification
-   ========================================================== */
-.toast-container {
-    position: fixed;
-    top: 24px;
-    right: 24px;
-    z-index: 9999;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    max-width: 360px;
-    pointer-events: none;
-}
-
-.toast {
-    background: #09203d;
-    border: 1px solid rgba(0, 180, 216, 0.4);
-    border-radius: 12px;
-    padding: 14px 18px;
-    color: #ffffff;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 180, 216, 0.25);
-    font-size: 13px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    pointer-events: auto;
-}
-
-.toast.toast-error {
-    border-color: var(--error-color);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 15px rgba(255, 77, 109, 0.3);
-}
-
-.toast.toast-success {
-    border-color: #10b981;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 15px rgba(16, 185, 129, 0.3);
-}
-
-.toast-icon {
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-}
-
-@keyframes toastSlideIn {
+@keyframes modalSlideIn {
     0% { opacity: 0; transform: translateY(-20px) scale(0.95); }
     100% { opacity: 1; transform: translateY(0) scale(1); }
 }
@@ -2295,7 +2248,7 @@ canvas {
     width: 100%;
     max-width: 620px;
     padding: 30px;
-    animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: modalSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .ranking-modal-header {

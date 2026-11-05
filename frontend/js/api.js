@@ -3,6 +3,9 @@
  * Centraliza requisições HTTP para a API REST FastAPI (/api/v1).
  */
 
+// Desativação global do sistema de notificações flutuantes (toasts)
+window.showToast = function() {};
+
 const API_BASE_URL = (() => {
     if (window.TRENDCOMMERCE_API_URL) return window.TRENDCOMMERCE_API_URL;
     const customUrl = localStorage.getItem('trendecommerce_api_url');

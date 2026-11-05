@@ -181,18 +181,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (searchInput) searchInput.value = first.title;
                 if (searchDropdown) searchDropdown.style.display = 'none';
 
-                window.showToast?.(`Produto selecionado: ${first.title}`, 'success', 3500);
                 runForecast(first.id, state.horizonDays);
-            } else {
-                window.showToast?.('Produto não encontrado no catálogo.', 'warning', 5000);
             }
         } catch (err) {
-            const msg = err.message || '';
-            if (msg.includes('não encontrado') || msg.includes('404')) {
-                window.showToast?.('Produto não encontrado no catálogo.', 'warning', 5000);
-            } else {
-                window.showToast?.('Erro ao consultar catálogo: ' + msg, 'error');
-            }
+            console.error('Erro ao consultar catálogo:', err);
         } finally {
             state.discovering = false;
         }
@@ -200,7 +192,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function runForecast(productId, days) {
         try {
-            window.showToast?.('Calculando projeção com XGBoost...', 'info', 1500);
             const data = await window.apiService.forecast.predict(productId, days);
             state.forecast = data;
             state.hoveredIndex = null;
@@ -210,7 +201,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             renderXAI();
             drawChart();
         } catch (err) {
-            window.showToast?.('Erro na previsão: ' + err.message, 'error');
+            console.error('Erro na previsão:', err);
         }
     }
 
