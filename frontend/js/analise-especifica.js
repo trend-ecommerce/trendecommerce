@@ -541,8 +541,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             for (let i = 0; i < points.length; i++) tickIndices.push(i);
         } else {
             for (let t = 0; t < numTicks; t++) {
-                const idx = Math.round((t / (numTicks - 1)) * (points.length - 1));
-                tickIndices.push(idx);
+                const frac = 0.12 + (t / (numTicks - 1)) * 0.76;
+                const idx = Math.round(frac * (points.length - 1));
+                if (!tickIndices.includes(idx)) tickIndices.push(idx);
             }
         }
 
@@ -681,11 +682,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     tooltip.style.display = 'flex';
                     tooltip.style.alignItems = 'center';
                     const bubbleHalfW = (tooltip.offsetWidth || 140) / 2;
-                    const canvasW = canvas.width || 600;
-                    const clampedX = Math.max(bubbleHalfW + 8, Math.min(canvasW - bubbleHalfW - 8, matchedPoint.x));
+                    const cssW = rect.width || canvas.width || 600;
+                    const cssX = matchedPoint.x / scaleX;
+                    const clampedX = Math.max(bubbleHalfW + 8, Math.min(cssW - bubbleHalfW - 8, cssX));
                     const padTop = 50;
+                    const padTopCss = (padTop / scaleY);
                     tooltip.style.left = `${clampedX}px`;
-                    tooltip.style.top = `${padTop - 8}px`; // Fixado no topo da linha guia
+                    tooltip.style.top = `${padTopCss}px`;
                 }
             }
         };

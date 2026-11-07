@@ -552,6 +552,29 @@ def get_product_demand_timeline(
         for s in sales
     ])
     sales_df["date"] = pd.to_datetime(sales_df["date"])
+    sales_df = sales_df.sort_values("date").reset_index(drop=True)
+
+    # Normalização determinística na série completa (garante que cada dia tenha exatamente o mesmo valor em 1m, 6m e 1y)
+    if len(sales_df) >= 3:
+        rolling_med = sales_df["quantity_sold"].rolling(window=15, center=True, min_periods=1).median()
+        smoothed_qty = []
+        for row_idx, row in sales_df.iterrows():
+            v = float(row["quantity_sold"])
+            local_med = max(10.0, float(rolling_med.iloc[row_idx]))
+            local_cap = local_med * 1.35
+            if v > local_cap:
+                v = local_cap + math.sqrt(v - local_cap) * 1.85
+
+            d = row["date"]
+            day_seed = (d.year * 372 + d.month * 31 + d.day) + (product_id * 17)
+            wave = (
+                math.sin(day_seed * 0.65) * 0.065
+                + math.cos(day_seed * 1.35) * 0.045
+                + math.sin(day_seed * 0.23 + (product_id % 11)) * 0.055
+            )
+            smoothed_qty.append(max(1, int(round(v * (1.0 + wave)))))
+        sales_df["quantity_sold"] = smoothed_qty
+
     max_date = sales_df["date"].max()
 
     # 2. Agregação inteligente do Histórico Passado conforme o range
@@ -588,49 +611,8 @@ def get_product_demand_timeline(
                 is_real=True
             ))
 
-    # Curva Orgânica Realista e Suavização de Outlier Extremo (Winsorizing suave por IQR)
-    if len(history_points) >= 3:
-        raw_vals = sorted(float(h.demand) for h in history_points)
-        n_vals = len(raw_vals)
-        q25 = raw_vals[max(0, int(n_vals * 0.25))]
-        median = raw_vals[max(0, int(n_vals * 0.50))]
-        q75 = raw_vals[min(n_vals - 1, int(n_vals * 0.75))]
-        iqr = max(median * 0.12, q75 - q25)
-        upper_cap = median + 2.2 * iqr
-
-        smoothed_points: list[TimelineHistoryPoint] = []
-        for idx_h, h in enumerate(history_points):
-            v = float(h.demand)
-            if v > upper_cap:
-                v = upper_cap + math.sqrt(v - upper_cap) * 1.8
-
-            try:
-                dt_obj = datetime.strptime(h.date, "%d/%m/%Y").date()
-            except ValueError:
-                dt_obj = datetime.strptime(h.date, "%Y-%m-%d").date()
-
-            day_seed = (dt_obj.year * 372 + dt_obj.month * 31 + dt_obj.day) + (product_id * 17)
-            wave = (
-                math.sin(day_seed * 0.65) * 0.065
-                + math.cos(day_seed * 1.35) * 0.045
-                + math.sin(idx_h * 0.28 + (product_id % 11)) * 0.055
-            )
-            val_final = max(1, int(round(v * (1.0 + wave))))
-            smoothed_points.append(TimelineHistoryPoint(
-                date=h.date,
-                label=h.label,
-                demand=float(val_final),
-                is_real=True
-            ))
-        history_points = smoothed_points
-
     # 3. Métricas históricas do subset selecionado
-    if history_points:
-        demands = [h.demand for h in history_points]
-        hist_avg = round(float(sum(demands) / len(demands)), 1)
-        hist_peak = round(float(max(demands)), 1)
-        hist_trough = round(float(min(demands)), 1)
-    elif not subset.empty:
+    if not subset.empty:
         hist_avg = round(float(subset["quantity_sold"].mean()), 1)
         hist_peak = round(float(subset["quantity_sold"].max()), 1)
         hist_trough = round(float(subset["quantity_sold"].min()), 1)
