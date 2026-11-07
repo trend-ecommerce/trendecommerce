@@ -117,13 +117,7 @@
                             <!-- Canvas 2D Nativo do Gráfico de Vendas -->
                             <div class="chart-container-wrap">
                                 <canvas id="mainSalesChartCanvas"></canvas>
-                                <div id="iaChartTooltip" class="chart-tooltip-bubble" style="display: none;">
-                                    <div id="iaTooltipBadgeType" class="tooltip-badge-type tooltip-badge-real">HISTÓRICO REAL</div>
-                                    <div class="tooltip-title">PRODUTO</div>
-                                    <div class="tooltip-price">R$ 0,00</div>
-                                    <div class="tooltip-sold">0 VENDIDOS</div>
-                                    <div id="iaTooltipConfidence" class="tooltip-confidence" style="display: none;">Intervalo 95%: 0 - 0 un</div>
-                                </div>
+                                <div id="iaChartTooltip" class="chart-tooltip-box chart-tooltip-bubble" style="display: none;"></div>
                             </div>
 
                             <!-- Grid de KPIs (Histórico + Projeção) -->
@@ -226,6 +220,6 @@
     <script src="js/api.js"></script>
     <script src="js/effects.js"></script>
     <script src="js/sidebar.js"></script>
-    <script src="js/ia-preditiva.js?v=2.5"></script>
+    <script src="js/ia-preditiva.js?v=2.6"></script>
 </body>
 </html>

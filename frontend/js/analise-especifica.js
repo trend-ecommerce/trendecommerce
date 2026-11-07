@@ -308,50 +308,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         const chartW = width - padLeft - padRight;
         const chartH = height - padTop - padBottom;
 
-        // Cálculo de escala vertical (Y)
-        const histVals = hist.map(p => p.demand || 0);
-        const foreVals = fore.map(p => p.predicted_demand || 0);
-        const confMaxVals = fore.map(p => p.confidence_max || p.predicted_demand || 0);
-        const allVals = [...histVals, ...foreVals, ...confMaxVals];
-        const highestVal = Math.max(10, ...allVals);
-        const roundedMax = Math.ceil((highestVal * 1.20) / 10) * 10;
-        const maxVal = Math.max(20, roundedMax);
-
-        const getY = (val) => padTop + chartH - (Math.max(0, val) / maxVal) * chartH;
-
-        // Grid Horizontal e Valores no Eixo Y
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-        ctx.lineWidth = 1;
-        ctx.fillStyle = '#9aa0a6';
-        ctx.font = '11px Plus Jakarta Sans';
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-
-        const step = maxVal / 4;
-        [0, step, step * 2, step * 3, maxVal].forEach(lvl => {
-            const y = getY(lvl);
-            ctx.beginPath();
-            ctx.moveTo(padLeft, y);
-            ctx.lineTo(width - padRight, y);
-            ctx.stroke();
-            ctx.fillText(Math.round(lvl).toString(), padLeft - 10, y);
-        });
-
-        // Mapeamento proporcional de pontos X e Y
+        // Mapeamento e normalização proporcional de pontos
         const totalPointsCount = hist.length + fore.length;
         const points = [];
 
         hist.forEach((h, i) => {
             const ratio = totalPointsCount > 1 ? i / (totalPointsCount - 1) : 0;
             const x = padLeft + ratio * chartW;
-            const y = getY(h.demand);
+            const val = Number(h.demand || 0);
+
+            let dtObj = null;
+            let rawDateStr = String(h.date || '');
+            if (rawDateStr.includes('/')) {
+                const [d, m, y] = rawDateStr.split('/').map(Number);
+                if (y && m && d) {
+                    dtObj = new Date(y, m - 1, d);
+                    rawDateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                }
+            } else if (rawDateStr.includes('-')) {
+                const parts = rawDateStr.split('-').map(Number);
+                if (parts[0] > 1000) {
+                    dtObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                }
+            }
+
             points.push({
                 x,
-                y,
-                demand: h.demand,
+                value: val,
+                demand: val,
                 date: h.date,
+                rawDate: rawDateStr,
+                dtObj,
                 label: h.label,
                 is_real: true,
+                isForecast: false,
                 index: i
             });
         });
@@ -360,78 +350,95 @@ document.addEventListener('DOMContentLoaded', async () => {
             const globalIdx = hist.length + i;
             const ratio = totalPointsCount > 1 ? globalIdx / (totalPointsCount - 1) : 1;
             const x = padLeft + ratio * chartW;
-            const y = getY(f.predicted_demand);
-            const yMin = getY(f.confidence_min);
-            const yMax = getY(f.confidence_max);
+            const val = Number(f.predicted_demand || 0);
+
+            let dtObj = null;
+            let rawDateStr = String(f.date || '');
+            if (rawDateStr.includes('/')) {
+                const [d, m, y] = rawDateStr.split('/').map(Number);
+                if (y && m && d) {
+                    dtObj = new Date(y, m - 1, d);
+                    rawDateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                }
+            } else if (rawDateStr.includes('-')) {
+                const parts = rawDateStr.split('-').map(Number);
+                if (parts[0] > 1000) {
+                    dtObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                }
+            }
+
             points.push({
                 x,
-                y,
-                yMin,
-                yMax,
-                predicted_demand: f.predicted_demand,
+                value: val,
+                predicted_demand: val,
                 confidence_min: f.confidence_min,
                 confidence_max: f.confidence_max,
                 date: f.date,
+                rawDate: rawDateStr,
+                dtObj,
                 label: f.label,
                 is_real: false,
+                isForecast: true,
                 index: globalIdx
             });
         });
 
+        // A) Escala Vertical Dinâmica [minVal, maxVal]
+        const rawValues = points.map(p => Number(p.value) || 0);
+        const dataMin = Math.min(...rawValues);
+        const dataMax = Math.max(...rawValues);
+        const spread = Math.max(dataMax - dataMin, dataMax * 0.15, 8);
+
+        const rawStep = spread / 4;
+        const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+        const residual = rawStep / mag;
+        const niceStep = residual <= 1 ? mag : residual <= 2 ? 2 * mag : residual <= 5 ? 5 * mag : 10 * mag;
+
+        const minVal = Math.max(0, Math.floor((dataMin - spread * 0.12) / niceStep) * niceStep);
+        const maxVal = Math.ceil((dataMax + spread * 0.12) / niceStep) * niceStep;
+        const valRange = Math.max(maxVal - minVal, 1);
+
+        const getY = (val) => padTop + chartH - ((val - minVal) / valRange) * chartH;
+
+        points.forEach(p => {
+            p.y = getY(p.value);
+        });
+
         state.points = points;
+
+        // Grade horizontal com 5 linhas (i = 0 até 4) e rótulos Y à esquerda
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#9aa0a6';
+        ctx.font = '500 11px Inter, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        for (let i = 0; i <= 4; i++) {
+            const val = Math.round(maxVal - (i / 4) * valRange);
+            const labelText = val.toLocaleString('pt-BR');
+            const y = padTop + (i / 4) * chartH;
+
+            ctx.beginPath();
+            ctx.moveTo(padLeft, y);
+            ctx.lineTo(width - padRight, y);
+            ctx.stroke();
+
+            ctx.fillText(labelText, 8, y);
+        }
 
         const histPoints = points.filter(p => p.is_real);
         const forePoints = points.filter(p => !p.is_real);
+        let lastHistPoint = histPoints.length > 0 ? histPoints[histPoints.length - 1] : null;
 
-        // Marco temporal presente ("HOJE")
         let xToday = padLeft + chartW * 0.7;
-        let lastHistPoint = null;
         if (histPoints.length > 0 && forePoints.length > 0) {
-            lastHistPoint = histPoints[histPoints.length - 1];
-            const firstForePoint = forePoints[0];
-            xToday = (lastHistPoint.x + firstForePoint.x) / 2;
+            xToday = (lastHistPoint.x + forePoints[0].x) / 2;
         } else if (histPoints.length > 0) {
-            lastHistPoint = histPoints[histPoints.length - 1];
             xToday = lastHistPoint.x;
         }
 
-        // 1. ÁREA SOMBREADA DE FAIXA DE CONFIANÇA 95% (Min - Max) na Projeção Futura
-        if (forePoints.length > 0) {
-            ctx.save();
-            ctx.beginPath();
-            if (lastHistPoint) {
-                ctx.moveTo(lastHistPoint.x, lastHistPoint.y);
-            } else {
-                ctx.moveTo(forePoints[0].x, forePoints[0].yMax);
-            }
-
-            forePoints.forEach(p => {
-                ctx.lineTo(p.x, p.yMax);
-            });
-
-            for (let i = forePoints.length - 1; i >= 0; i--) {
-                ctx.lineTo(forePoints[i].x, forePoints[i].yMin);
-            }
-
-            if (lastHistPoint) {
-                ctx.lineTo(lastHistPoint.x, lastHistPoint.y);
-            }
-            ctx.closePath();
-
-            const confGrad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
-            confGrad.addColorStop(0, 'rgba(168, 85, 247, 0.26)');
-            confGrad.addColorStop(1, 'rgba(168, 85, 247, 0.04)');
-            ctx.fillStyle = confGrad;
-            ctx.fill();
-
-            ctx.strokeStyle = 'rgba(168, 85, 247, 0.35)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([2, 3]);
-            ctx.stroke();
-            ctx.restore();
-        }
-
-        // 2. PASSADO REAL (Lado Esquerdo - Linha sólida #38bdf8 com degradê)
+        // B) Passado Real (Gradiente Suave + Linha #38bdf8 sem bolinhas estáticas)
         if (histPoints.length > 0) {
             ctx.save();
             ctx.beginPath();
@@ -444,13 +451,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             ctx.closePath();
 
             const histGrad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
-            histGrad.addColorStop(0, 'rgba(56, 189, 248, 0.28)');
-            histGrad.addColorStop(1, 'rgba(56, 189, 248, 0.01)');
+            histGrad.addColorStop(0, 'rgba(56, 189, 248, 0.20)');
+            histGrad.addColorStop(1, 'rgba(56, 189, 248, 0.0)');
             ctx.fillStyle = histGrad;
             ctx.fill();
             ctx.restore();
 
-            // Linha contínua sólida
             ctx.save();
             ctx.beginPath();
             ctx.moveTo(histPoints[0].x, histPoints[0].y);
@@ -460,11 +466,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             ctx.strokeStyle = '#38bdf8';
             ctx.lineWidth = 2.2;
             ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
             ctx.stroke();
             ctx.restore();
         }
 
-        // 3. PROJEÇÃO FUTURA (Lado Direito - Linha tracejada neon #00f0ff contínua)
+        // Projeção IA (Gradiente Suave + Linha #a855f7)
         if (forePoints.length > 0) {
             ctx.save();
             ctx.beginPath();
@@ -476,63 +483,106 @@ document.addEventListener('DOMContentLoaded', async () => {
             forePoints.forEach(p => {
                 ctx.lineTo(p.x, p.y);
             });
-            ctx.strokeStyle = '#00f0ff';
+            ctx.lineTo(forePoints[forePoints.length - 1].x, padTop + chartH);
+            const startX = lastHistPoint ? lastHistPoint.x : forePoints[0].x;
+            ctx.lineTo(startX, padTop + chartH);
+            ctx.closePath();
+
+            const foreGrad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
+            foreGrad.addColorStop(0, 'rgba(168, 85, 247, 0.18)');
+            foreGrad.addColorStop(1, 'rgba(168, 85, 247, 0.0)');
+            ctx.fillStyle = foreGrad;
+            ctx.fill();
+            ctx.restore();
+
+            ctx.save();
+            ctx.beginPath();
+            if (lastHistPoint) {
+                ctx.moveTo(lastHistPoint.x, lastHistPoint.y);
+            } else {
+                ctx.moveTo(forePoints[0].x, forePoints[0].y);
+            }
+            forePoints.forEach(p => {
+                ctx.lineTo(p.x, p.y);
+            });
+            ctx.strokeStyle = '#a855f7';
             ctx.lineWidth = 2.2;
             ctx.lineJoin = 'round';
-            ctx.setLineDash([6, 5]);
-            ctx.shadowColor = '#00f0ff';
-            ctx.shadowBlur = 8;
+            ctx.lineCap = 'round';
             ctx.stroke();
             ctx.restore();
         }
 
-        // 4. LINHA DIVISÓRIA CENTRAL ("HOJE")
-        ctx.save();
-        ctx.setLineDash([4, 4]);
-        ctx.strokeStyle = 'rgba(245, 158, 11, 0.85)';
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.moveTo(xToday, padTop - 12);
-        ctx.lineTo(xToday, padTop + chartH);
-        ctx.stroke();
-        ctx.restore();
-
-        // Badge estilizada no topo da linha "HOJE"
-        const todayDateStr = state.timelineData.current_date || '02/11/2026';
-        const todayBadgeText = `HOJE • ${todayDateStr}`;
-        ctx.save();
-        ctx.font = 'bold 10px Plus Jakarta Sans';
-        const tw = ctx.measureText(todayBadgeText).width + 18;
-        const th = 22;
-        const bx = Math.max(padLeft, Math.min(width - padRight - tw, xToday - tw / 2));
-        const by = padTop - 34;
-
-        ctx.fillStyle = 'rgba(10, 24, 46, 0.92)';
-        ctx.strokeStyle = 'rgba(245, 158, 11, 0.9)';
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        if (ctx.roundRect) {
-            ctx.roundRect(bx, by, tw, th, 11);
-        } else {
-            ctx.rect(bx, by, tw, th);
-        }
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#f59e0b';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(todayBadgeText, bx + tw / 2, by + th / 2);
-        ctx.restore();
-
-        // 5. PONTO ATIVO ÚNICO NA CURVA + LINHA GUIA VERTICAL (SCRUBBER)
-        if (state.hoveredIndex !== null && points[state.hoveredIndex]) {
-            const hp = points[state.hoveredIndex];
-
-            // Linha guia vertical tracejada sutil
+        // Linha divisória sutil na transição entre histórico e projeção
+        if (histPoints.length > 0 && forePoints.length > 0) {
             ctx.save();
             ctx.setLineDash([3, 3]);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(xToday, padTop);
+            ctx.lineTo(xToday, padTop + chartH);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // C) Eixo X com Linha de Base e Ticks Verticais (|) estilo Google Finance
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop + chartH);
+        ctx.lineTo(width - padRight, padTop + chartH);
+        ctx.stroke();
+
+        const numTicks = Math.min(5, Math.max(3, Math.floor(chartW / 180)));
+        const tickIndices = [];
+        if (points.length <= numTicks) {
+            for (let i = 0; i < points.length; i++) tickIndices.push(i);
+        } else {
+            for (let t = 0; t < numTicks; t++) {
+                const idx = Math.round((t / (numTicks - 1)) * (points.length - 1));
+                tickIndices.push(idx);
+            }
+        }
+
+        const MesShort = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        ctx.font = '500 11px Inter, sans-serif';
+        ctx.fillStyle = '#9aa0a6';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+
+        tickIndices.forEach(idx => {
+            const p = points[idx];
+            if (!p) return;
+
+            // Traço vertical de 5px saindo da linha de base
+            ctx.beginPath();
+            ctx.moveTo(p.x, padTop + chartH);
+            ctx.lineTo(p.x, padTop + chartH + 5);
+            ctx.stroke();
+
+            // Rótulo de data estilo Google Finance
+            let dateStr = p.label || p.date;
+            if (p.dtObj) {
+                if (state.historyRange === '5y') {
+                    dateStr = `${MesShort[p.dtObj.getMonth()]} ${String(p.dtObj.getFullYear()).slice(-2)}`;
+                } else {
+                    dateStr = `${p.dtObj.getDate()} ${MesShort[p.dtObj.getMonth()]}`;
+                }
+            }
+            ctx.fillText(dateStr, p.x, padTop + chartH + 8);
+        });
+        ctx.restore();
+
+        // D) Scrubber Vertical Tracejado + Ponto Único com Halo
+        if (state.hoveredIndex !== null && state.hoveredIndex >= 0 && points[state.hoveredIndex]) {
+            const hp = points[state.hoveredIndex];
+
+            // Linha vertical pontilhada
+            ctx.save();
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(hp.x, padTop);
@@ -540,48 +590,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             ctx.stroke();
             ctx.restore();
 
-            // Ponto ativo único na curva
+            // Halo translúcido (radius: 9)
             ctx.save();
             ctx.beginPath();
-            ctx.arc(hp.x, hp.y, 4.5, 0, Math.PI * 2);
-            ctx.fillStyle = hp.is_real ? '#38bdf8' : '#00f0ff';
+            ctx.arc(hp.x, hp.y, 9, 0, Math.PI * 2);
+            ctx.fillStyle = hp.is_real ? 'rgba(56, 189, 248, 0.22)' : 'rgba(168, 85, 247, 0.22)';
+            ctx.fill();
+            ctx.restore();
+
+            // Ponto sólido único na curva (radius: 5)
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(hp.x, hp.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = hp.is_real ? '#38bdf8' : '#a855f7';
             ctx.fill();
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 1.8;
             ctx.stroke();
             ctx.restore();
         }
-
-        // 7. LABELS DO EIXO X (Com Anti-Colisão Inteligente)
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-
-        let stepModulo = 1;
-        if (totalPoints > 200) stepModulo = 30; // ~1 legenda mensal para séries de 1 ano
-        else if (totalPoints > 100) stepModulo = 12;
-        else if (totalPoints > 50) stepModulo = 6;
-        else if (totalPoints > 25) stepModulo = 3;
-        else if (totalPoints > 14) stepModulo = 2;
-
-        let lastLabelX = -999;
-        const minGap = 46; // Mínimo de 46 pixels entre datas para evitar sobreposição
-
-        points.forEach((p, i) => {
-            const isFirst = (i === 0);
-            const isLast = (i === totalPoints - 1);
-            const isBoundary = (p.is_real && i === histPoints.length - 1);
-            const isCandidate = isFirst || isLast || isBoundary || (i % stepModulo === 0);
-
-            if (isCandidate) {
-                // Só desenha se tiver distância segura da data anterior e não vazar na borda
-                if ((p.x - lastLabelX >= minGap) && (width - padRight - p.x >= 12)) {
-                    ctx.fillStyle = '#9aa0a6';
-                    ctx.font = '10px Plus Jakarta Sans';
-                    ctx.fillText(p.label || p.date.substring(0, 5), p.x, padTop + chartH + 10);
-                    lastLabelX = p.x;
-                }
-            }
-        });
     }
 
     function setupCanvasHover() {
@@ -600,8 +627,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const points = state.points || [];
             if (!points || points.length === 0) return;
 
-            const padLeft = 48;
-            const padRight = 32;
+            const padLeft = 52;
+            const padRight = 36;
             const width = canvas.width;
 
             // Limite da área horizontal útil do gráfico
@@ -633,29 +660,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                     state.hoveredIndex = matchedPoint.index;
                     drawChart();
 
-                    const bubbleHalfW = 75;
+                    const Sem = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                    const Mes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                    const [yy, mm, dd] = String(matchedPoint.rawDate || '').split('-').map(Number);
+                    const dtObj = (yy && mm && dd) ? new Date(yy, mm - 1, dd) : (matchedPoint.dtObj || null);
+                    const datePillStr = dtObj
+                        ? `${Sem[dtObj.getDay()]}, ${dd || dtObj.getDate()} ${Mes[(mm ? mm - 1 : dtObj.getMonth())]} ${yy || dtObj.getFullYear()}`
+                        : (matchedPoint.date || matchedPoint.label);
+                    const valStr = `${Math.round(matchedPoint.value).toLocaleString('pt-BR')} un`;
+                    const tagForecast = matchedPoint.isForecast
+                        ? `<span style="color:#c084fc;font-size:11px;font-weight:600;margin-left:6px;">• IA</span>`
+                        : '';
+
+                    tooltip.innerHTML = `
+                        <span style="color:#ffffff;font-weight:700;font-size:13px;margin-right:8px;">${valStr}</span>
+                        <span style="color:#9aa0a6;font-weight:500;font-size:12px;">${datePillStr}</span>
+                        ${tagForecast}
+                    `;
+
+                    tooltip.style.display = 'flex';
+                    tooltip.style.alignItems = 'center';
+                    const bubbleHalfW = (tooltip.offsetWidth || 140) / 2;
                     const canvasW = canvas.width || 600;
                     const clampedX = Math.max(bubbleHalfW + 8, Math.min(canvasW - bubbleHalfW - 8, matchedPoint.x));
-
-                    const tooltipSold = tooltip.querySelector('.tooltip-sold');
-                    const tooltipConfidence = document.getElementById('iaTooltipConfidence') || document.getElementById('tooltipConfidence');
-
-                    if (tooltipSold) {
-                        const val = Number(matchedPoint.demand || matchedPoint.predicted_demand || 0).toLocaleString('pt-BR');
-                        tooltipSold.innerHTML = `<span>${val} un</span> <span style="color: #9aa0a6; font-weight: 400; margin-left: 6px;">${matchedPoint.date}</span>`;
-                    }
-
-                    if (tooltipConfidence) {
-                        if (matchedPoint.is_real) {
-                            tooltipConfidence.style.display = 'none';
-                        } else {
-                            tooltipConfidence.style.display = 'inline-block';
-                            tooltipConfidence.textContent = `(95%: ${matchedPoint.confidence_min}-${matchedPoint.confidence_max})`;
-                        }
-                    }
-
                     const padTop = 50;
-                    tooltip.style.display = 'flex';
                     tooltip.style.left = `${clampedX}px`;
                     tooltip.style.top = `${padTop - 8}px`; // Fixado no topo da linha guia
                 }

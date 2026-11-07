@@ -1891,41 +1891,22 @@ canvas {
 
 
 
+.chart-tooltip-box,
 .chart-tooltip-bubble {
     position: absolute;
-    background: #1e2026;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    padding: 5px 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
     pointer-events: none;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    z-index: 20;
+    z-index: 30;
+    background: #202124 !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-radius: 6px !important;
+    padding: 6px 12px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45) !important;
+    white-space: nowrap !important;
+    min-width: unset !important;
+    max-width: none !important;
+    text-align: left !important;
     transform: translate(-50%, -100%);
-    white-space: nowrap;
-    animation: none;
-}
-
-.chart-tooltip-bubble .tooltip-badge-type,
-.chart-tooltip-bubble .tooltip-title,
-.chart-tooltip-bubble .tooltip-price {
-    display: none !important;
-}
-
-.chart-tooltip-bubble .tooltip-sold {
-    font-size: 13px;
-    font-weight: 700;
-    color: #ffffff;
-    font-family: 'Plus Jakarta Sans', sans-serif;
-}
-
-.chart-tooltip-bubble .tooltip-confidence {
-    font-size: 11px;
-    color: #a855f7;
-    margin-left: 6px;
-    font-weight: 500;
+    transition: left 0.03s linear, top 0.03s linear;
 }
 
 .chart-controls-box {
