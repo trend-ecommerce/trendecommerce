@@ -568,7 +568,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         ctx.textBaseline = 'top';
 
         let stepModulo = 1;
-        if (totalPoints > 100) stepModulo = 12;
+        if (totalPoints > 200) stepModulo = 30; // ~1 legenda mensal para séries de 1 ano
+        else if (totalPoints > 100) stepModulo = 12;
         else if (totalPoints > 50) stepModulo = 6;
         else if (totalPoints > 25) stepModulo = 3;
         else if (totalPoints > 14) stepModulo = 2;

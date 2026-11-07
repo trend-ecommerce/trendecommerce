@@ -551,27 +551,15 @@ def get_product_demand_timeline(
     # 2. Agregação inteligente do Histórico Passado conforme o range
     history_points: list[TimelineHistoryPoint] = []
     
-    if history_range_clean in ["1m", "6m"]:
-        days_back = 30 if history_range_clean == "1m" else 182
+    if history_range_clean in ["1m", "6m", "1y"]:
+        days_map = {"1m": 30, "6m": 182, "1y": 365}
+        days_back = days_map[history_range_clean]
         start_date = max_date - pd.Timedelta(days=days_back)
         subset = sales_df[sales_df["date"] >= start_date].copy()
+        
         for _, row in subset.iterrows():
             d = row["date"]
-            history_points.append(TimelineHistoryPoint(
-                date=d.strftime("%d/%m/%Y"),
-                label=d.strftime("%d/%m"),
-                demand=round(float(row["quantity_sold"]), 1),
-                is_real=True
-            ))
-    elif history_range_clean == "1y":
-        # 1 ano com agrupamento semanal (~52 pontos)
-        start_date = max_date - pd.Timedelta(days=365)
-        subset = sales_df[sales_df["date"] >= start_date].copy()
-        subset["period"] = subset["date"].dt.to_period("W")
-        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
-        for _, row in grp.iterrows():
-            d = row["date"]
-            lbl = f"{MONTHS_PT_BR[d.month]}/{str(d.year)[2:]}" if d.day <= 7 else d.strftime("%d/%m")
+            lbl = f"{MONTHS_PT_BR[d.month]}/{str(d.year)[2:]}" if (history_range_clean == "1y" and d.day == 1) else d.strftime("%d/%m")
             history_points.append(TimelineHistoryPoint(
                 date=d.strftime("%d/%m/%Y"),
                 label=lbl,
