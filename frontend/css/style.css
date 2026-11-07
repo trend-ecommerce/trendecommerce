@@ -1890,97 +1890,43 @@ canvas {
 
 
 
+
 .chart-tooltip-bubble {
-
     position: absolute;
-
-    background: rgba(7, 23, 43, 0.95);
-
-    border: 1px solid #00d4ff;
-
-    border-radius: 12px;
-
-    padding: 10px 14px;
-
-    text-align: center;
-
+    background: #1e2026;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    padding: 5px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     pointer-events: none;
-
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 212, 255, 0.4);
-
-    z-index: 10;
-
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    z-index: 20;
     transform: translate(-50%, -100%);
-
     white-space: nowrap;
-
-    animation: fadeInBubble 0.15s ease-out;
-
+    animation: none;
 }
 
-
-
-@keyframes fadeInBubble {
-
-    from {
-
-        opacity: 0;
-
-        transform: translate(-50%, -90%) scale(0.95);
-
-    }
-
-    to {
-
-        opacity: 1;
-
-        transform: translate(-50%, -100%) scale(1);
-
-    }
-
+.chart-tooltip-bubble .tooltip-badge-type,
+.chart-tooltip-bubble .tooltip-title,
+.chart-tooltip-bubble .tooltip-price {
+    display: none !important;
 }
 
-
-
-.tooltip-title {
-
-    font-size: 10px;
-
-    font-weight: 700;
-
-    letter-spacing: 0.8px;
-
-    color: #ffffff;
-
-    margin-bottom: 2px;
-
-}
-
-
-
-.tooltip-price {
-
+.chart-tooltip-bubble .tooltip-sold {
     font-size: 13px;
-
-    font-weight: 800;
-
-    color: #00e5ff;
-
+    font-weight: 700;
+    color: #ffffff;
+    font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
-
-
-.tooltip-sold {
-
-    font-size: 10px;
-
-    font-weight: 600;
-
-    color: var(--text-secondary);
-
+.chart-tooltip-bubble .tooltip-confidence {
+    font-size: 11px;
+    color: #a855f7;
+    margin-left: 6px;
+    font-weight: 500;
 }
-
-
 
 .chart-controls-box {
 

@@ -346,9 +346,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const getY = (val) => padTop + chartH - (Math.max(0, val) / maxVal) * chartH;
 
         // Grid Horizontal e Valores no Eixo Y
-        ctx.strokeStyle = 'rgba(0, 150, 255, 0.12)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
-        ctx.fillStyle = '#8da2bd';
+        ctx.fillStyle = '#9aa0a6';
         ctx.font = '10px Plus Jakarta Sans';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -484,7 +484,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ctx.lineTo(histPoints[i].x, histPoints[i].y);
             }
             ctx.strokeStyle = '#38bdf8';
-            ctx.lineWidth = 3.0;
+            ctx.lineWidth = 2.2;
+            ctx.lineJoin = 'round';
             ctx.stroke();
             ctx.restore();
         }
@@ -502,7 +503,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ctx.lineTo(p.x, p.y);
             });
             ctx.strokeStyle = '#00f0ff';
-            ctx.lineWidth = 3.0;
+            ctx.lineWidth = 2.2;
+            ctx.lineJoin = 'round';
             ctx.setLineDash([6, 5]);
             ctx.shadowColor = '#00f0ff';
             ctx.shadowBlur = 8;
@@ -549,45 +551,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         ctx.fillText(todayBadgeText, bx + tw / 2, by + th / 2);
         ctx.restore();
 
-        // 5. LINHA GUIA VERTICAL SE HOVERED
+        // 5. PONTO ATIVO ÚNICO NA CURVA + LINHA GUIA VERTICAL (SCRUBBER)
         if (state.hoveredIndex !== null && points[state.hoveredIndex]) {
             const hp = points[state.hoveredIndex];
+
+            // Linha guia vertical tracejada sutil
             ctx.save();
             ctx.setLineDash([3, 3]);
-            ctx.strokeStyle = hp.is_real ? 'rgba(56, 189, 248, 0.55)' : 'rgba(0, 240, 255, 0.55)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(hp.x, padTop);
             ctx.lineTo(hp.x, padTop + chartH);
             ctx.stroke();
             ctx.restore();
-        }
 
-        // 6. CÍRCULOS DOS PONTOS
-        const totalPoints = points.length;
-        const dotRadius = totalPoints > 35 ? 2.5 : (totalPoints > 18 ? 3.2 : 4.2);
-        const hoverRadius = dotRadius + 3;
-        const haloRadius = hoverRadius + 5;
-
-        points.forEach((p, i) => {
-            const isHovered = (state.hoveredIndex === i);
-
-            if (isHovered) {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, haloRadius, 0, Math.PI * 2);
-                ctx.fillStyle = p.is_real ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 240, 255, 0.3)';
-                ctx.fill();
-            }
-
+            // Ponto ativo único na curva
+            ctx.save();
             ctx.beginPath();
-            ctx.arc(p.x, p.y, isHovered ? hoverRadius : dotRadius, 0, Math.PI * 2);
-            ctx.fillStyle = isHovered ? '#ffffff' : (p.is_real ? '#38bdf8' : '#00f0ff');
+            ctx.arc(hp.x, hp.y, 4.5, 0, Math.PI * 2);
+            ctx.fillStyle = hp.is_real ? '#38bdf8' : '#00f0ff';
             ctx.fill();
-
-            ctx.strokeStyle = p.is_real ? '#081d36' : '#2e1065';
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.8;
             ctx.stroke();
-        });
+            ctx.restore();
+        }
 
         // 7. LABELS DO EIXO X (Com Anti-Colisão Inteligente)
         ctx.textAlign = 'center';
@@ -612,7 +601,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isCandidate) {
                 // Só desenha se tiver distância segura da data anterior e não vazar na borda
                 if ((p.x - lastLabelX >= minGap) && (width - padRight - p.x >= 12)) {
-                    ctx.fillStyle = '#8da2bd';
+                    ctx.fillStyle = '#9aa0a6';
                     ctx.font = '10px Plus Jakarta Sans';
                     ctx.fillText(p.label || p.date.substring(0, 5), p.x, padTop + chartH + 10);
                     lastLabelX = p.x;
@@ -670,61 +659,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                     state.hoveredIndex = matchedPoint.index;
                     drawChart();
 
-                    const currentProd = state.selectedProduct;
-                    const bubbleHalfW = 110;
+                    const bubbleHalfW = 75;
                     const canvasW = canvas.width || 600;
-                    const clampedX = Math.max(bubbleHalfW + 10, Math.min(canvasW - bubbleHalfW - 10, matchedPoint.x));
+                    const clampedX = Math.max(bubbleHalfW + 8, Math.min(canvasW - bubbleHalfW - 8, matchedPoint.x));
 
-                    const badgeType = document.getElementById('iaTooltipBadgeType') || document.getElementById('tooltipBadgeType');
-                    const tooltipTitle = tooltip.querySelector('.tooltip-title');
-                    const tooltipPrice = tooltip.querySelector('.tooltip-price');
                     const tooltipSold = tooltip.querySelector('.tooltip-sold');
                     const tooltipConfidence = document.getElementById('iaTooltipConfidence') || document.getElementById('tooltipConfidence');
 
-                    if (badgeType) {
-                        if (matchedPoint.is_real) {
-                            badgeType.textContent = 'HISTÓRICO REAL';
-                            badgeType.className = 'tooltip-badge-type tooltip-badge-real';
-                        } else {
-                            badgeType.textContent = 'PROJEÇÃO XGBOOST';
-                            badgeType.className = 'tooltip-badge-type tooltip-badge-forecast';
-                        }
-                    }
-
-                    if (tooltipTitle) {
-                        const title = (currentProd?.title || state.timelineData?.product_title || 'PRODUTO').toUpperCase();
-                        tooltipTitle.textContent = title.length > 28 ? title.slice(0, 26) + '...' : title;
-                    }
-
-                    if (tooltipPrice) {
-                        const price = currentProd?.price ?? state.timelineData?.price;
-                        tooltipPrice.textContent = price !== undefined
-                            ? `R$ ${Number(price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                            : '';
-                    }
-
                     if (tooltipSold) {
-                        if (matchedPoint.is_real) {
-                            const val = Number(matchedPoint.demand || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-                            tooltipSold.textContent = `${val} VENDAS AUDITADAS • ${matchedPoint.date}`;
-                        } else {
-                            const val = Number(matchedPoint.predicted_demand || 0).toLocaleString('pt-BR');
-                            tooltipSold.textContent = `${val} VENDAS PREVISTAS • ${matchedPoint.date}`;
-                        }
+                        const val = Number(matchedPoint.demand || matchedPoint.predicted_demand || 0).toLocaleString('pt-BR');
+                        tooltipSold.innerHTML = `<span>${val} un</span> <span style="color: #9aa0a6; font-weight: 400; margin-left: 6px;">${matchedPoint.date}</span>`;
                     }
 
                     if (tooltipConfidence) {
                         if (matchedPoint.is_real) {
                             tooltipConfidence.style.display = 'none';
                         } else {
-                            tooltipConfidence.style.display = 'block';
-                            tooltipConfidence.textContent = `Intervalo 95%: ${matchedPoint.confidence_min} - ${matchedPoint.confidence_max} un`;
+                            tooltipConfidence.style.display = 'inline-block';
+                            tooltipConfidence.textContent = `(95%: ${matchedPoint.confidence_min}-${matchedPoint.confidence_max})`;
                         }
                     }
 
-                    tooltip.style.display = 'block';
+                    const padTop = 45;
+                    tooltip.style.display = 'flex';
                     tooltip.style.left = `${clampedX}px`;
-                    tooltip.style.top = `${Math.max(55, matchedPoint.y - 18)}px`;
+                    tooltip.style.top = `${padTop - 8}px`; // Fixado no topo da linha guia
                 }
             }
         };
