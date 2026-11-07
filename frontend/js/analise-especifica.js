@@ -563,25 +563,33 @@ document.addEventListener('DOMContentLoaded', async () => {
             ctx.stroke();
         });
 
-        // 7. LABELS DO EIXO X (Legendas de Datas com Amostragem Inteligente)
+        // 7. LABELS DO EIXO X (Com Anti-Colisão Inteligente)
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
 
         let stepModulo = 1;
-        if (totalPoints > 50) stepModulo = 6;
+        if (totalPoints > 100) stepModulo = 12;
+        else if (totalPoints > 50) stepModulo = 6;
         else if (totalPoints > 25) stepModulo = 3;
         else if (totalPoints > 14) stepModulo = 2;
+
+        let lastLabelX = -999;
+        const minGap = 46; // Mínimo de 46 pixels entre datas para evitar sobreposição
 
         points.forEach((p, i) => {
             const isFirst = (i === 0);
             const isLast = (i === totalPoints - 1);
             const isBoundary = (p.is_real && i === histPoints.length - 1);
-            const showLabel = isFirst || isLast || isBoundary || (i % stepModulo === 0);
+            const isCandidate = isFirst || isLast || isBoundary || (i % stepModulo === 0);
 
-            if (showLabel || state.hoveredIndex === i) {
-                ctx.fillStyle = (state.hoveredIndex === i) ? '#ffffff' : '#8da2bd';
-                ctx.font = (state.hoveredIndex === i) ? 'bold 10px Plus Jakarta Sans' : '10px Plus Jakarta Sans';
-                ctx.fillText(p.label || p.date.substring(0, 5), p.x, padTop + chartH + 10);
+            if (isCandidate) {
+                // Só desenha se tiver distância segura da data anterior e não vazar na borda
+                if ((p.x - lastLabelX >= minGap) && (width - padRight - p.x >= 12)) {
+                    ctx.fillStyle = '#8da2bd';
+                    ctx.font = '10px Plus Jakarta Sans';
+                    ctx.fillText(p.label || p.date.substring(0, 5), p.x, padTop + chartH + 10);
+                    lastLabelX = p.x;
+                }
             }
         });
     }

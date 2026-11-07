@@ -551,25 +551,11 @@ def get_product_demand_timeline(
     # 2. Agregação inteligente do Histórico Passado conforme o range
     history_points: list[TimelineHistoryPoint] = []
     
-    if history_range_clean == "1m":
-        # 30 dias diários brutos (~30 pontos)
-        start_date = max_date - pd.Timedelta(days=30)
+    if history_range_clean in ["1m", "6m"]:
+        days_back = 30 if history_range_clean == "1m" else 182
+        start_date = max_date - pd.Timedelta(days=days_back)
         subset = sales_df[sales_df["date"] >= start_date].copy()
         for _, row in subset.iterrows():
-            d = row["date"]
-            history_points.append(TimelineHistoryPoint(
-                date=d.strftime("%d/%m/%Y"),
-                label=d.strftime("%d/%m"),
-                demand=round(float(row["quantity_sold"]), 1),
-                is_real=True
-            ))
-    elif history_range_clean == "6m":
-        # 6 meses com agrupamento semanal (~26 pontos)
-        start_date = max_date - pd.Timedelta(days=182)
-        subset = sales_df[sales_df["date"] >= start_date].copy()
-        subset["period"] = subset["date"].dt.to_period("W")
-        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
-        for _, row in grp.iterrows():
             d = row["date"]
             history_points.append(TimelineHistoryPoint(
                 date=d.strftime("%d/%m/%Y"),
@@ -592,17 +578,17 @@ def get_product_demand_timeline(
                 demand=round(float(row["quantity_sold"]), 1),
                 is_real=True
             ))
-    else:  # "5y"
-        # 5 anos com agrupamento mensal (~60 pontos)
+    elif history_range_clean == "5y":
         start_date = max_date - pd.DateOffset(years=5)
         subset = sales_df[sales_df["date"] >= start_date].copy()
         subset["period"] = subset["date"].dt.to_period("M")
         grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
         for _, row in grp.iterrows():
             d = row["date"]
+            actual_date = min(d + pd.Timedelta(days=14), max_date) if (d.month == max_date.month and d.year == max_date.year) else (d + pd.Timedelta(days=14))
             lbl = f"{MONTHS_PT_BR[d.month]}/{str(d.year)[2:]}"
             history_points.append(TimelineHistoryPoint(
-                date=d.strftime("15/%m/%Y"),
+                date=actual_date.strftime("%d/%m/%Y"),
                 label=lbl,
                 demand=round(float(row["quantity_sold"]), 1),
                 is_real=True
