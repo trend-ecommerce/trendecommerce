@@ -88,13 +88,70 @@
                     <div class="dash-card main-chart-card">
                         <div class="chart-main-area-col" style="display: flex; flex-direction: column; width: 100%; min-width: 0;">
                             
+                            <div class="specific-card-header" style="margin-bottom: 12px;">
+                                <h2 id="iaCardProdTitle" class="specific-prod-title">CARREGANDO PRODUTO...</h2>
+                                <div id="iaCardProdPrice" class="specific-prod-price">PREÇO: R$ --</div>
+                            </div>
+
+                            <!-- Barra de Controles da Linha do Tempo Híbrida -->
+                            <div class="timeline-controls-bar" style="margin-bottom: 14px; padding: 8px 14px;">
+                                <div class="timeline-control-group">
+                                    <span class="timeline-control-label">Histórico Passado:</span>
+                                    <div class="timeline-btn-group">
+                                        <button type="button" class="timeline-btn history-range-btn" data-range="1m">1 MÊS</button>
+                                        <button type="button" class="timeline-btn history-range-btn active" data-range="6m">6 MESES</button>
+                                        <button type="button" class="timeline-btn history-range-btn" data-range="1y">1 ANO</button>
+                                        <button type="button" class="timeline-btn history-range-btn" data-range="5y">5 ANOS</button>
+                                    </div>
+                                </div>
+                                <div class="timeline-control-divider"></div>
+                                <div class="timeline-control-group">
+                                    <span class="timeline-control-label">Projeção IA:</span>
+                                    <div class="timeline-btn-group">
+                                        <button type="button" class="timeline-btn horizon-btn" data-days="7">7 DIAS</button>
+                                        <button type="button" class="timeline-btn horizon-btn active" data-days="14">14 DIAS</button>
+                                        <button type="button" class="timeline-btn horizon-btn" data-days="30">30 DIAS</button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Canvas 2D Nativo do Gráfico de Vendas -->
                             <div class="chart-container-wrap">
                                 <canvas id="mainSalesChartCanvas"></canvas>
                                 <div id="iaChartTooltip" class="chart-tooltip-bubble" style="display: none;">
+                                    <div id="iaTooltipBadgeType" class="tooltip-badge-type tooltip-badge-real">HISTÓRICO REAL</div>
                                     <div class="tooltip-title">PRODUTO</div>
                                     <div class="tooltip-price">R$ 0,00</div>
                                     <div class="tooltip-sold">0 VENDIDOS</div>
+                                    <div id="iaTooltipConfidence" class="tooltip-confidence" style="display: none;">Intervalo 95%: 0 - 0 un</div>
+                                </div>
+                            </div>
+
+                            <!-- Grid de KPIs (Histórico + Projeção) -->
+                            <div class="kpi-grid kpi-grid-6col" style="margin-top: 14px;">
+                                <div class="kpi-box">
+                                    <span class="kpi-title">MÉDIA HISTÓRICA DIÁRIA</span>
+                                    <span id="kpiHistoricalAvg" class="kpi-val text-cyan">-- un/dia</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">PICO HISTÓRICO MÁXIMO</span>
+                                    <span id="kpiHistoricalPeak" class="kpi-val text-amber">-- un</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">DEMANDA TOTAL PROJETADA</span>
+                                    <span id="kpiForecastTotal" class="kpi-val text-cyan">-- un</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">FATURAMENTO ESTIMADO</span>
+                                    <span id="kpiForecastRevenue" class="kpi-val text-emerald">R$ --</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">MÉDIA DIÁRIA PROJETADA</span>
+                                    <span id="kpiForecastDailyAvg" class="kpi-val text-cyan">-- un/dia</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">ESTOQUE DE SEGURANÇA</span>
+                                    <span id="kpiForecastSafetyStock" class="kpi-val text-emerald">-- un</span>
                                 </div>
                             </div>
                         </div>
@@ -170,6 +227,6 @@
     <script src="js/api.js"></script>
     <script src="js/effects.js"></script>
     <script src="js/sidebar.js"></script>
-    <script src="js/ia-preditiva.js"></script>
+    <script src="js/ia-preditiva.js?v=2.2"></script>
 </body>
 </html>

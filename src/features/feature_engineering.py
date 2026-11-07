@@ -101,6 +101,45 @@ class FeatureEngineer:
         logger.info(f"Features de vendas criadas: {len(df.columns)} colunas")
         return df
 
+    def create_trend_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Cria features baseadas em tendencias de pesquisa."""
+        if df.empty:
+            return df
+        
+        df = df.copy()
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values(["keyword", "date"])
+        
+        grouped = df.groupby("keyword")
+        
+        df["media_pesquisas_7d"] = grouped["interest_score"].transform(
+            lambda x: x.rolling(window=7, min_periods=1).mean()
+        )
+        df["crescimento_pesquisas"] = grouped["interest_score"].transform(
+            lambda x: x.pct_change()
+        ).fillna(0)
+        
+        df["tendencia_pesquisa"] = grouped["interest_score"].transform(
+            lambda x: x.rolling(window=7, min_periods=3).apply(
+                self._calculate_trend, raw=True
+            )
+        ).fillna(0)
+        
+        df["volatilidade_pesquisa"] = grouped["interest_score"].transform(
+            lambda x: x.rolling(window=7, min_periods=2).std()
+        ).fillna(0)
+        
+        return df
+
+    @staticmethod
+    def _calculate_trend(values: np.ndarray) -> float:
+        """Calcula tendencia via regressao linear."""
+        if len(values) < 2:
+            return 0.0
+        x = np.arange(len(values))
+        coeffs = np.polyfit(x, values, 1)
+        return float(coeffs[0])
+
     def create_temporal_features(self, df: pd.DataFrame, date_col: str = "date") -> pd.DataFrame:
         """Cria features temporais a partir da coluna de data.
         

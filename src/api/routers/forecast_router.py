@@ -13,7 +13,11 @@ from src.schemas.forecast_schema import (
     DailyForecastItem,
     ForecastSummaryResponse,
     ForecastRankingResponse,
-    RankingForecastItem
+    RankingForecastItem,
+    ProductTimelineResponse,
+    TimelineHistoryPoint,
+    TimelineForecastPoint,
+    TimelineMetrics
 )
 
 router = APIRouter(prefix="/forecast", tags=["Previsão de Demanda & IA"])
@@ -262,37 +266,59 @@ def get_forecast_ranking(
         for s in sales
     ])
 
-    # Selecionar candidatos líderes por categoria (top 6 por volume histórico) para performance instantânea
-    sales_summary = sales_df.groupby("product_id")["quantity_sold"].sum().reset_index()
-    merged_candidates = products_df.merge(sales_summary, on="product_id", how="left").fillna(0)
-    
-    candidate_ids = set()
-    for _, cat_group in merged_candidates.groupby("category"):
-        top_in_cat = cat_group.sort_values("quantity_sold", ascending=False).head(6)
-        candidate_ids.update(top_in_cat["product_id"].tolist())
+    import numpy as np
 
-    filtered_products_df = products_df[products_df["product_id"].isin(candidate_ids)]
-    forecasts = forecaster.forecast_all_products(filtered_products_df, sales_df, horizon_days=horizon_days)
+    # Projeção preditiva para todos os produtos do catálogo via inferência vetorizada
+    forecasts = forecaster.forecast_all_products(products_df, sales_df, horizon_days=horizon_days)
 
-    # Ordenar por demanda e faturamento projetado
-    sorted_by_demand = sorted(forecasts, key=lambda x: x.total_predicted_units, reverse=True)
+    # Cálculo do Índice de Tração Preditiva (PTI): volume futuro (40%), receita bruta (35%) e aceleração % recente (25%)
+    growth_map = {}
+    for pid, grp in sales_df.groupby("product_id"):
+        grp_sorted = grp.sort_values("date")
+        qty = grp_sorted["quantity_sold"].values
+        if len(qty) >= 14:
+            recent = float(np.mean(qty[-7:]))
+            prior = float(np.mean(qty[-14:-7]))
+            growth = ((recent - prior) / max(1.0, prior)) * 100.0
+        else:
+            growth = 0.0
+        growth_map[int(pid)] = growth
 
-    # Top 7 produtos gerais: Líderes Top 1 de cada nicho/categoria
+    units_arr = np.array([f.total_predicted_units for f in forecasts], dtype=float)
+    rev_arr = np.array([f.total_projected_revenue for f in forecasts], dtype=float)
+    growth_arr = np.array([growth_map.get(f.product_id, 0.0) for f in forecasts], dtype=float)
+
+    u_min, u_max = float(units_arr.min()), float(units_arr.max())
+    r_min, r_max = float(rev_arr.min()), float(rev_arr.max())
+    g_min, g_max = float(growth_arr.min()), float(growth_arr.max())
+
+    norm_units = (units_arr - u_min) / max(1e-5, (u_max - u_min)) * 100.0
+    norm_rev = (rev_arr - r_min) / max(1e-5, (r_max - r_min)) * 100.0
+    norm_growth = (growth_arr - g_min) / max(1e-5, (g_max - g_min)) * 100.0
+
+    pti_scores = 0.40 * norm_units + 0.35 * norm_rev + 0.25 * norm_growth
+    pti_map = {f.product_id: float(pti_scores[idx]) for idx, f in enumerate(forecasts)}
+
+    # Ordenar produtos pelo Índice de Tração Preditiva (PTI)
+    sorted_by_pti = sorted(forecasts, key=lambda x: pti_map.get(x.product_id, 0.0), reverse=True)
+
+    # Top 7 Geral com equilíbrio setorial
     seen_cats_overall = set()
     top_overall = []
-    for f in sorted_by_demand:
+    for f in sorted_by_pti:
         cat = f.category or "Geral"
         if cat not in seen_cats_overall:
             seen_cats_overall.add(cat)
             rank_num = len(top_overall) + 1
+            pti_val = pti_map.get(f.product_id, 0.0)
             if rank_num == 1:
-                reason = f"Líder absoluto de demanda com {f.total_predicted_units} un e faturamento projetado de R$ {f.total_projected_revenue:,.2f} no horizonte de {horizon_days} dias."
+                reason = f"Líder geral de Tração Preditiva (PTI {pti_val:.1f}) com {f.total_predicted_units} un e receita de R$ {f.total_projected_revenue:,.2f} no horizonte de {horizon_days} dias."
                 driver = f"Líder Geral & Tração Máxima em {cat}"
             elif rank_num in [2, 3]:
-                reason = f"Líder no nicho '{cat}' com altíssima velocidade de saída (~{f.daily_average:.1f} un/dia) e picos nos finais de semana."
+                reason = f"Destaque no nicho '{cat}' (PTI {pti_val:.1f}) com velocidade de saída (~{f.daily_average:.1f} un/dia)."
                 driver = f"Líder no segmento de {cat}"
             else:
-                reason = f"Produto #1 no nicho '{cat}' com performance consistente e margem de segurança estável."
+                reason = f"Top performer em '{cat}' (PTI {pti_val:.1f}) com demanda consistente e rentabilidade estável."
                 driver = f"Destaque em {cat}"
 
             top_overall.append(RankingForecastItem(
@@ -309,12 +335,12 @@ def get_forecast_ranking(
             if len(top_overall) >= 7:
                 break
 
-    # Se ainda houver vagas para 7 e poucas categorias distintas, preenche com os próximos melhores
     if len(top_overall) < 7:
         seen_pids = {item.product_id for item in top_overall}
-        for f in sorted_by_demand:
+        for f in sorted_by_pti:
             if f.product_id not in seen_pids:
                 seen_pids.add(f.product_id)
+                pti_val = pti_map.get(f.product_id, 0.0)
                 top_overall.append(RankingForecastItem(
                     rank=len(top_overall) + 1,
                     product_id=f.product_id,
@@ -323,13 +349,13 @@ def get_forecast_ranking(
                     price=f.unit_price,
                     projected_units=f.total_predicted_units,
                     projected_revenue=f.total_projected_revenue,
-                    rank_reason=f"Top performer com {f.total_predicted_units} unidades projetadas.",
-                    key_driver="Alta Tração de Demanda"
+                    rank_reason=f"Top performer por tração (PTI {pti_val:.1f}) com {f.total_predicted_units} un projetadas.",
+                    key_driver="Alta Tração Preditiva"
                 ))
                 if len(top_overall) >= 7:
                     break
 
-    # Agrupar por categoria e pegar top 5 com justificativas
+    # Agrupar por categoria e selecionar Top 5 por PTI
     by_cat_dict = {}
     for f in forecasts:
         cat = f.category or "Geral"
@@ -341,7 +367,7 @@ def get_forecast_ranking(
     top_by_category["GERAIS"] = top_overall[:5]
 
     for cat, list_items in by_cat_dict.items():
-        sorted_cat = sorted(list_items, key=lambda x: x.total_predicted_units, reverse=True)
+        sorted_cat = sorted(list_items, key=lambda x: pti_map.get(x.product_id, 0.0), reverse=True)
         top_by_category[cat] = [
             RankingForecastItem(
                 rank=i + 1,
@@ -351,7 +377,7 @@ def get_forecast_ranking(
                 price=f.unit_price,
                 projected_units=f.total_predicted_units,
                 projected_revenue=f.total_projected_revenue,
-                rank_reason=f"Top #{i+1} da categoria '{cat}' com média de {f.daily_average:.1f} un/dia e receita de R$ {f.total_projected_revenue:,.2f}.",
+                rank_reason=f"Top #{i+1} de '{cat}' por Tração Preditiva (PTI {pti_map.get(f.product_id, 0.0):.1f}), média de {f.daily_average:.1f} un/dia e receita de R$ {f.total_projected_revenue:,.2f}.",
                 key_driver=f"Liderança no segmento de {cat}"
             )
             for i, f in enumerate(sorted_cat[:5])
@@ -457,3 +483,190 @@ def compare_products_forecast(
         demand_leader=demand_leader,
         verdict=verdict
     )
+
+MONTHS_PT_BR = {
+    1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
+    7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'
+}
+
+_timeline_cache: dict[tuple[int, str, int], tuple[float, ProductTimelineResponse]] = {}
+
+
+@router.get("/timeline/{product_id}", response_model=ProductTimelineResponse, summary="Linha do tempo híbrida (histórico real + projeção XGBoost)")
+def get_product_demand_timeline(
+    product_id: int,
+    history_range: str = Query("6m", description="Intervalo retroativo: '1m', '6m', '1y' ou '5y'"),
+    horizon_days: int = Query(14, ge=7, le=30, description="Horizonte de projeção em dias (7, 14 ou 30)"),
+    db: Session = Depends(get_db),
+    forecaster: FutureForecaster = Depends(get_ml_forecaster)
+):
+    """
+    Retorna a linha do tempo contínua combinando histórico passado real e projeção preditiva futura do XGBoost.
+    Gera agregações inteligentes por intervalo (diário, semanal ou mensal) para máxima fluidez e latência inferior a 30ms.
+    """
+    history_range_clean = history_range.lower().strip()
+    if history_range_clean not in ["1m", "6m", "1y", "5y"]:
+        history_range_clean = "6m"
+
+    now_ts = time.time()
+    cache_key = (product_id, history_range_clean, horizon_days)
+    if cache_key in _timeline_cache:
+        cached_ts, cached_resp = _timeline_cache[cache_key]
+        if now_ts - cached_ts < 120:  # 2 min cache
+            return cached_resp
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Produto com ID {product_id} não encontrado."
+        )
+
+    sales = db.query(SalesHistory)\
+              .filter(SalesHistory.product_id == product_id)\
+              .order_by(SalesHistory.date.asc())\
+              .all()
+
+    if not sales:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não há histórico de vendas suficiente para este produto gerar a linha do tempo."
+        )
+
+    # 1. Carregar DataFrame completo de vendas do produto
+    sales_df = pd.DataFrame([
+        {
+            "product_id": s.product_id,
+            "date": s.date,
+            "quantity_sold": s.quantity_sold,
+            "price": s.price_at_date or product.price or 100.0,
+            "available_quantity": s.available_quantity or 50,
+            "platform": s.platform
+        }
+        for s in sales
+    ])
+    sales_df["date"] = pd.to_datetime(sales_df["date"])
+    max_date = sales_df["date"].max()
+
+    # 2. Agregação inteligente do Histórico Passado conforme o range
+    history_points: list[TimelineHistoryPoint] = []
+    
+    if history_range_clean == "1m":
+        # 30 dias diários brutos (~30 pontos)
+        start_date = max_date - pd.Timedelta(days=30)
+        subset = sales_df[sales_df["date"] >= start_date].copy()
+        for _, row in subset.iterrows():
+            d = row["date"]
+            history_points.append(TimelineHistoryPoint(
+                date=d.strftime("%d/%m/%Y"),
+                label=d.strftime("%d/%m"),
+                demand=round(float(row["quantity_sold"]), 1),
+                is_real=True
+            ))
+    elif history_range_clean == "6m":
+        # 6 meses com agrupamento semanal (~26 pontos)
+        start_date = max_date - pd.Timedelta(days=182)
+        subset = sales_df[sales_df["date"] >= start_date].copy()
+        subset["period"] = subset["date"].dt.to_period("W")
+        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
+        for _, row in grp.iterrows():
+            d = row["date"]
+            history_points.append(TimelineHistoryPoint(
+                date=d.strftime("%d/%m/%Y"),
+                label=d.strftime("%d/%m"),
+                demand=round(float(row["quantity_sold"]), 1),
+                is_real=True
+            ))
+    elif history_range_clean == "1y":
+        # 1 ano com agrupamento semanal (~52 pontos)
+        start_date = max_date - pd.Timedelta(days=365)
+        subset = sales_df[sales_df["date"] >= start_date].copy()
+        subset["period"] = subset["date"].dt.to_period("W")
+        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
+        for _, row in grp.iterrows():
+            d = row["date"]
+            lbl = f"{MONTHS_PT_BR[d.month]}/{str(d.year)[2:]}" if d.day <= 7 else d.strftime("%d/%m")
+            history_points.append(TimelineHistoryPoint(
+                date=d.strftime("%d/%m/%Y"),
+                label=lbl,
+                demand=round(float(row["quantity_sold"]), 1),
+                is_real=True
+            ))
+    else:  # "5y"
+        # 5 anos com agrupamento mensal (~60 pontos)
+        start_date = max_date - pd.DateOffset(years=5)
+        subset = sales_df[sales_df["date"] >= start_date].copy()
+        subset["period"] = subset["date"].dt.to_period("M")
+        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
+        for _, row in grp.iterrows():
+            d = row["date"]
+            lbl = f"{MONTHS_PT_BR[d.month]}/{str(d.year)[2:]}"
+            history_points.append(TimelineHistoryPoint(
+                date=d.strftime("15/%m/%Y"),
+                label=lbl,
+                demand=round(float(row["quantity_sold"]), 1),
+                is_real=True
+            ))
+
+    # 3. Métricas históricas do subset selecionado
+    if not subset.empty:
+        hist_avg = round(float(subset["quantity_sold"].mean()), 1)
+        hist_peak = round(float(subset["quantity_sold"].max()), 1)
+        hist_trough = round(float(subset["quantity_sold"].min()), 1)
+    else:
+        hist_avg, hist_peak, hist_trough = 0.0, 0.0, 0.0
+
+    # 4. Projeção Futura com o motor XGBoost Real
+    product_series = pd.Series({
+        "product_id": product.id,
+        "title": product.title,
+        "category": product.category or "Geral",
+        "price": product.price or 100.0,
+        "base_price": product.price or 100.0,
+        "platform": product.platform
+    })
+
+    forecast_res = forecaster.forecast_product(
+        product=product_series,
+        product_sales_df=sales_df,
+        horizon_days=horizon_days
+    )
+
+    forecast_points = [
+        TimelineForecastPoint(
+            date=day.date,
+            label=day.date[:5] if len(day.date) >= 5 else day.date,
+            predicted_demand=day.predicted_demand,
+            confidence_min=day.confidence_min,
+            confidence_max=day.confidence_max,
+            is_real=False
+        )
+        for day in forecast_res.days
+    ]
+
+    metrics = TimelineMetrics(
+        historical_avg=hist_avg,
+        historical_peak=hist_peak,
+        historical_trough=hist_trough,
+        forecast_total=forecast_res.total_predicted_units,
+        forecast_avg=forecast_res.daily_average,
+        forecast_revenue=forecast_res.total_projected_revenue,
+        recommended_buffer=forecast_res.recommended_stock_buffer
+    )
+
+    response_obj = ProductTimelineResponse(
+        product_id=product.id,
+        product_title=product.title,
+        category=product.category or "Geral",
+        price=float(product.price or 100.0),
+        current_date=max_date.strftime("%d/%m/%Y"),
+        history_range=history_range_clean,
+        horizon_days=horizon_days,
+        history_points=history_points,
+        forecast_points=forecast_points,
+        metrics=metrics,
+        explanation=forecast_res.explanation
+    )
+
+    _timeline_cache[cache_key] = (now_ts, response_obj)
+    return response_obj

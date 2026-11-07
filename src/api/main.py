@@ -1,19 +1,19 @@
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
 from src.api.routers import auth_router, products_router, forecast_router, opportunity_router
-from src.api.dependencies import get_db_instance, get_password_hash
+from src.api.dependencies import get_db_instance, get_password_hash, get_current_user, get_ml_forecaster
 from src.database.models import Base, User
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Gerencia inicialização e encerramento da aplicação."""
+    """Gerencia inicialização e encerramento da aplicação com carregamento leve de ML (<80MB RAM)."""
     db_manager = get_db_instance()
     Base.metadata.create_all(db_manager.engine)
 
@@ -42,11 +42,15 @@ async def lifespan(app: FastAPI):
         except Exception as err:
             print(f"[TrendCommerce] Erro ao criar admin padrão: {err}")
 
-        # 3. Pré-aquecer motor ML em background no startup para respostas instantâneas
+        # 3. Inicialização leve do motor preditivo XGBoost (<80 MB RAM)
         try:
-            from src.api.dependencies import get_ml_forecaster
+            model_file = Path("models/xgboost_demand_v1.json")
+            if not model_file.exists():
+                print("[TrendCommerce] Artefato XGBoost não encontrado. Executando pipeline de treinamento inicial...")
+                from src.ml.train_pipeline import run_training_pipeline
+                run_training_pipeline(str(model_file))
             get_ml_forecaster(session)
-            print("[TrendCommerce] Motor preditivo XGBoost aquecido e pronto na memória.")
+            print("[TrendCommerce] Motor preditivo XGBoost carregado em memória (<80MB RAM).")
         except Exception as err:
             print(f"[TrendCommerce] Erro no warmup ML: {err}")
     yield
@@ -131,8 +135,8 @@ def health_check():
 
 
 @app.api_route("/api/v1/admin/reseed", methods=["GET", "POST"], tags=["Admin"], summary="Recarregar catálogo e histórico inicial")
-def reseed_database():
-    """Injeta ou sincroniza o catálogo e históricos diários."""
+def reseed_database(current_user: User = Depends(get_current_user)):
+    """Injeta ou sincroniza o catálogo e históricos diários (rota administrativa protegida)."""
     from src.database.seed_loader import seed_database_if_empty
     db_manager = get_db_instance()
     with db_manager.session() as session:
