@@ -591,50 +591,46 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const updateHover = (clientX, clientY) => {
             const rect = canvas.getBoundingClientRect();
-            const mouseX = clientX - rect.left;
-            const mouseY = clientY - rect.top;
+            if (!rect.width || !rect.height) return;
+
+            // Compensação de proporção e telas de alto DPI (Windows 125%/150%)
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mouseX = (clientX - rect.left) * scaleX;
+            const mouseY = (clientY - rect.top) * scaleY;
 
             const points = state.points || [];
             if (!points || points.length === 0) return;
 
-            const padLeft = 52;
-            const padRight = 36;
-            const padTop = 50;
-            const padBottom = 45;
-            const width = canvas.width || rect.width;
-            const height = canvas.height || 340;
+            const padLeft = 48;
+            const padRight = 32;
+            const width = canvas.width;
 
-            const inBounds = mouseX >= (padLeft - 25) &&
-                             mouseX <= (width - padRight + 25) &&
-                             mouseY >= (padTop - 35) &&
-                             mouseY <= (height - padBottom + 35);
+            // Limite da área horizontal útil do gráfico
+            const inHorizontalBounds = mouseX >= (padLeft - 10) && mouseX <= (width - padRight + 10);
 
+            if (!inHorizontalBounds) {
+                clearHover();
+                return;
+            }
+
+            // Algoritmo Scrubber Google Finance: encontra o dia mais próximo no eixo X
             let matchedPoint = null;
+            let minXDist = Infinity;
 
-            if (inBounds) {
-                const totalPoints = points.length;
-                const colWidth = (width - padLeft - padRight) / Math.max(1, totalPoints - 1);
-                const xThreshold = Math.max(16, colWidth * 0.55);
-                let minDistance = Infinity;
-
-                for (const p of points) {
-                    const xDist = Math.abs(mouseX - p.x);
-                    const directDist = Math.hypot(mouseX - p.x, mouseY - p.y);
-
-                    if (directDist < 28) {
-                        if (directDist < minDistance) {
-                            minDistance = directDist;
-                            matchedPoint = p;
-                        }
-                    } else if (xDist < xThreshold && xDist < minDistance) {
-                        minDistance = xDist;
-                        matchedPoint = p;
-                    }
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                const dist = Math.abs(mouseX - p.x);
+                if (dist < minXDist) {
+                    minXDist = dist;
+                    matchedPoint = p;
                 }
             }
 
             if (matchedPoint) {
-                canvas.style.cursor = 'pointer';
+                canvas.style.cursor = 'crosshair';
+
+                // Atualiza o desenho e o tooltip apenas quando o ponto ativo muda
                 if (state.hoveredIndex !== matchedPoint.index) {
                     state.hoveredIndex = matchedPoint.index;
                     drawChart();
@@ -644,14 +640,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const canvasW = canvas.width || 600;
                     const clampedX = Math.max(bubbleHalfW + 10, Math.min(canvasW - bubbleHalfW - 10, matchedPoint.x));
 
-                    const prodTitle = currentProd?.title || state.timelineData?.product_title || 'PRODUTO';
-                    const prodPrice = currentProd?.price ?? state.timelineData?.price;
-
-                    const badgeType = document.getElementById('tooltipBadgeType');
+                    const badgeType = document.getElementById('iaTooltipBadgeType') || document.getElementById('tooltipBadgeType');
                     const tooltipTitle = tooltip.querySelector('.tooltip-title');
                     const tooltipPrice = tooltip.querySelector('.tooltip-price');
                     const tooltipSold = tooltip.querySelector('.tooltip-sold');
-                    const tooltipConfidence = document.getElementById('tooltipConfidence');
+                    const tooltipConfidence = document.getElementById('iaTooltipConfidence') || document.getElementById('tooltipConfidence');
 
                     if (badgeType) {
                         if (matchedPoint.is_real) {
@@ -664,22 +657,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
 
                     if (tooltipTitle) {
-                        tooltipTitle.textContent = prodTitle.toUpperCase().slice(0, 30);
+                        const title = (currentProd?.title || state.timelineData?.product_title || 'PRODUTO').toUpperCase();
+                        tooltipTitle.textContent = title.length > 28 ? title.slice(0, 26) + '...' : title;
                     }
 
                     if (tooltipPrice) {
-                        tooltipPrice.textContent = prodPrice !== undefined
-                            ? `R$ ${Number(prodPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                        const price = currentProd?.price ?? state.timelineData?.price;
+                        tooltipPrice.textContent = price !== undefined
+                            ? `R$ ${Number(price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
                             : '';
                     }
 
                     if (tooltipSold) {
                         if (matchedPoint.is_real) {
-                            const demandVal = Number(matchedPoint.demand || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-                            tooltipSold.textContent = `${demandVal} VENDAS AUDITADAS • ${matchedPoint.date}`;
+                            const val = Number(matchedPoint.demand || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+                            tooltipSold.textContent = `${val} VENDAS AUDITADAS • ${matchedPoint.date}`;
                         } else {
-                            const demandVal = Number(matchedPoint.predicted_demand || 0).toLocaleString('pt-BR');
-                            tooltipSold.textContent = `${demandVal} VENDAS PREVISTAS • ${matchedPoint.date}`;
+                            const val = Number(matchedPoint.predicted_demand || 0).toLocaleString('pt-BR');
+                            tooltipSold.textContent = `${val} VENDAS PREVISTAS • ${matchedPoint.date}`;
                         }
                     }
 
@@ -694,20 +689,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     tooltip.style.display = 'block';
                     tooltip.style.left = `${clampedX}px`;
-                    tooltip.style.top = `${Math.max(65, matchedPoint.y - 15)}px`;
+                    tooltip.style.top = `${Math.max(55, matchedPoint.y - 18)}px`;
                 }
-            } else {
-                canvas.style.cursor = 'default';
-                if (state.hoveredIndex !== null) {
-                    state.hoveredIndex = null;
-                    drawChart();
-                }
-                tooltip.style.display = 'none';
             }
         };
 
-        canvas.onmousemove = (e) => updateHover(e.clientX, e.clientY);
-        canvas.onmouseleave = () => {
+        const clearHover = () => {
             canvas.style.cursor = 'default';
             if (state.hoveredIndex !== null) {
                 state.hoveredIndex = null;
@@ -715,17 +702,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             tooltip.style.display = 'none';
         };
+
+        canvas.onmousemove = (e) => updateHover(e.clientX, e.clientY);
+        canvas.onmouseleave = clearHover;
+
+        // Suporte a Touch para Celulares e Tablets
         canvas.ontouchstart = (e) => {
             if (e.touches && e.touches[0]) updateHover(e.touches[0].clientX, e.touches[0].clientY);
         };
         canvas.ontouchmove = (e) => {
             if (e.touches && e.touches[0]) updateHover(e.touches[0].clientX, e.touches[0].clientY);
         };
-        canvas.ontouchend = () => {
-            state.hoveredIndex = null;
-            drawChart();
-            tooltip.style.display = 'none';
-        };
+        canvas.ontouchend = clearHover;
     }
 
     function setupResize() {
