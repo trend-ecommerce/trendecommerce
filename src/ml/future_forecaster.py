@@ -272,7 +272,13 @@ class FutureForecaster:
             else pd.to_datetime(datetime.utcnow().date())
         )
         
-        history = sorted_sales["quantity_sold"].tolist() if not sorted_sales.empty else [10] * 30
+        if not sorted_sales.empty:
+            s_clean = FeatureEngineer.sanitize_sales_series(sorted_sales["quantity_sold"])
+            local_med = s_clean.rolling(window=15, center=True, min_periods=1).median()
+            capped_history = np.minimum(s_clean, local_med * 2.2)
+            history = [max(1, int(round(x))) for x in capped_history.tolist()]
+        else:
+            history = [10] * 30
 
         daily_forecasts: list[FutureDayForecast] = []
         total_units = 0
@@ -361,7 +367,10 @@ class FutureForecaster:
         if not sales_df.empty:
             sales_sorted = sales_df.sort_values("date")
             for pid, grp in sales_sorted.groupby("product_id"):
-                histories[int(pid)] = grp["quantity_sold"].tolist()
+                s_clean = FeatureEngineer.sanitize_sales_series(grp["quantity_sold"])
+                local_med = s_clean.rolling(window=15, center=True, min_periods=1).median()
+                capped_history = np.minimum(s_clean, local_med * 2.2)
+                histories[int(pid)] = [max(1, int(round(x))) for x in capped_history.tolist()]
             max_date = pd.to_datetime(sales_sorted["date"].max())
         else:
             max_date = pd.to_datetime(datetime.utcnow().date())

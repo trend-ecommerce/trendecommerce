@@ -383,22 +383,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         });
 
-        // A) Escala Vertical Dinâmica [minVal, maxVal]
+        // A) Escala Vertical Dinâmica com suporte a Outliers Superiores Válidos (Soft-Knee)
         const rawValues = points.map(p => Number(p.value) || 0);
-        const dataMin = Math.min(...rawValues);
-        const dataMax = Math.max(...rawValues);
-        const spread = Math.max(dataMax - dataMin, dataMax * 0.15, 8);
+        const sortedVals = [...rawValues].sort((a, b) => a - b);
+        const dataMin = sortedVals[0] || 0;
+        const dataMax = sortedVals[sortedVals.length - 1] || 100;
+        const p90 = sortedVals[Math.min(sortedVals.length - 1, Math.floor(sortedVals.length * 0.90))] || dataMax;
 
-        const rawStep = spread / 4;
+        // Detecta se há outlier superior válido extremo (ex: compra em lote > 1.8x do P90)
+        const hasExtremeSpike = dataMax > p90 * 1.8 && p90 > dataMin;
+        const coreMax = hasExtremeSpike ? Math.ceil(p90 * 1.18) : dataMax;
+        const coreSpread = Math.max(coreMax - dataMin, coreMax * 0.15, 8);
+
+        const rawStep = coreSpread / 4;
         const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
         const residual = rawStep / mag;
         const niceStep = residual <= 1 ? mag : residual <= 2 ? 2 * mag : residual <= 5 ? 5 * mag : 10 * mag;
 
-        const minVal = Math.max(0, Math.floor((dataMin - spread * 0.12) / niceStep) * niceStep);
-        const maxVal = Math.ceil((dataMax + spread * 0.12) / niceStep) * niceStep;
-        const valRange = Math.max(maxVal - minVal, 1);
+        const minVal = Math.max(0, Math.floor((dataMin - coreSpread * 0.12) / niceStep) * niceStep);
+        const maxVal = hasExtremeSpike ? Math.ceil(dataMax * 1.05) : Math.ceil((coreMax + coreSpread * 0.12) / niceStep) * niceStep;
+        const kneeVal = hasExtremeSpike ? Math.max(minVal + niceStep * 3, coreMax) : maxVal;
 
-        const getY = (val) => padTop + chartH - ((val - minVal) / valRange) * chartH;
+        // Se houver outlier extremo, 75% inferiores do gráfico mostram a faixa normal com nitidez
+        // e os 25% superiores acomodam o pico válido sem achatar o restante da série
+        const getY = (val) => {
+            if (!hasExtremeSpike || val <= kneeVal) {
+                const ratio = (val - minVal) / Math.max(1, kneeVal - minVal);
+                const bandH = hasExtremeSpike ? chartH * 0.75 : chartH;
+                return padTop + chartH - ratio * bandH;
+            } else {
+                const excessRatio = (val - kneeVal) / Math.max(1, maxVal - kneeVal);
+                return (padTop + chartH * 0.25) - excessRatio * (chartH * 0.25);
+            }
+        };
 
         points.forEach(p => {
             p.y = getY(p.value);
@@ -415,9 +432,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         ctx.textBaseline = 'middle';
 
         for (let i = 0; i <= 4; i++) {
-            const val = Math.round(maxVal - (i / 4) * valRange);
-            const labelText = val.toLocaleString('pt-BR');
             const y = padTop + (i / 4) * chartH;
+            let val;
+            if (hasExtremeSpike && i === 0) {
+                val = Math.round(maxVal);
+            } else if (hasExtremeSpike) {
+                const subRatio = (4 - i) / 3;
+                val = Math.round(minVal + subRatio * (kneeVal - minVal));
+            } else {
+                val = Math.round(maxVal - (i / 4) * (maxVal - minVal));
+            }
+            const labelText = val.toLocaleString('pt-BR');
 
             ctx.beginPath();
             ctx.moveTo(padLeft, y);

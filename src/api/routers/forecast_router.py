@@ -554,26 +554,10 @@ def get_product_demand_timeline(
     sales_df["date"] = pd.to_datetime(sales_df["date"])
     sales_df = sales_df.sort_values("date").reset_index(drop=True)
 
-    # Normalização determinística na série completa (garante que cada dia tenha exatamente o mesmo valor em 1m, 6m e 1y)
-    if len(sales_df) >= 3:
-        rolling_med = sales_df["quantity_sold"].rolling(window=15, center=True, min_periods=1).median()
-        smoothed_qty = []
-        for row_idx, row in sales_df.iterrows():
-            v = float(row["quantity_sold"])
-            local_med = max(10.0, float(rolling_med.iloc[row_idx]))
-            local_cap = local_med * 1.35
-            if v > local_cap:
-                v = local_cap + math.sqrt(v - local_cap) * 1.85
-
-            d = row["date"]
-            day_seed = (d.year * 372 + d.month * 31 + d.day) + (product_id * 17)
-            wave = (
-                math.sin(day_seed * 0.65) * 0.065
-                + math.cos(day_seed * 1.35) * 0.045
-                + math.sin(day_seed * 0.23 + (product_id % 11)) * 0.055
-            )
-            smoothed_qty.append(max(1, int(round(v * (1.0 + wave)))))
-        sales_df["quantity_sold"] = smoothed_qty
+    # Trata apenas outliers inferiores de erro (ex: 0 ou 1 venda por falha de captura),
+    # mantendo 100% intactos os outliers superiores válidos (picos reais de compras grandes)
+    from src.features.feature_engineering import FeatureEngineer
+    sales_df["quantity_sold"] = FeatureEngineer.sanitize_sales_series(sales_df["quantity_sold"])
 
     max_date = sales_df["date"].max()
 

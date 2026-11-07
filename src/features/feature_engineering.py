@@ -27,6 +27,20 @@ class FeatureEngineer:
     em features numéricas e temporais úteis para previsão de demanda.
     """
 
+    @staticmethod
+    def sanitize_sales_series(series: pd.Series) -> pd.Series:
+        """Corrige apenas outliers inferiores de erro (0, 1 ou quedas irreais >75%),
+        preservando 100% das vendas normais e dos picos reais (outliers superiores válidos).
+        """
+        if series.empty:
+            return series
+        s = series.astype(float).copy()
+        local_med = s.rolling(window=15, center=True, min_periods=1).median()
+        is_low_error = ((s <= 1.0) & (local_med >= 4.0)) | (s < (local_med * 0.25))
+        s = np.where(is_low_error, np.round(local_med), s)
+        return pd.Series(s, index=series.index)
+
+
     def create_sales_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Cria features baseadas no histórico de vendas.
         
@@ -50,6 +64,9 @@ class FeatureEngineer:
             
         df = df.sort_values(["product_id", "date"])
         
+        # Saneamento de outliers inferiores (ex: 0 ou 1 venda por falha de captura)
+        df["quantity_sold"] = df.groupby("product_id")["quantity_sold"].transform(self.sanitize_sales_series)
+
         grouped = df.groupby("product_id")
         
         # Vendas - médias móveis
@@ -69,11 +86,11 @@ class FeatureEngineer:
         # Crescimento de vendas
         df["crescimento_vendas"] = grouped["quantity_sold"].transform(
             lambda x: x.pct_change()
-        ).fillna(0)
+        ).replace([np.inf, -np.inf], 0.0).fillna(0.0)
         
         df["crescimento_vendas_7d"] = grouped["quantity_sold"].transform(
             lambda x: x.pct_change(periods=7)
-        ).fillna(0)
+        ).replace([np.inf, -np.inf], 0.0).fillna(0.0)
         
         # Preço - features
         df["preco_medio_7_dias"] = grouped["price"].transform(
