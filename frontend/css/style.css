@@ -1228,55 +1228,75 @@ body {
 
    ========================================================================== */
 
-.dashboard-layout {
+/* ==========================================================================
+   RESET & DASHBOARD CONTAINER
+   ========================================================================== */
 
-    width: 100%;
-
-    min-height: 100vh;
-
-    display: flex;
-
-    position: relative;
-
-    z-index: 1;
-
-    overflow-x: hidden;
-
+body.dashboard-mode {
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    min-height: 100vh !important;
+    background: #020813 !important;
+    overflow-x: hidden !important;
 }
 
+.app-root.dashboard-view {
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    min-height: 100vh !important;
+}
 
+.dashboard-layout {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    padding: 0;
+}
 
 /* Sidebar */
-
 .dash-sidebar {
-
     width: 240px;
-
     min-width: 240px;
-
     flex-shrink: 0;
-
     background: #06152b;
-
     border-right: 1px solid rgba(0, 180, 216, 0.15);
-
     padding: 36px 20px;
-
     display: flex;
-
     flex-direction: column;
-
     gap: 40px;
-
     box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
-
-    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, visibility 0.3s ease;
-
     box-sizing: border-box;
 
-    will-change: margin-left, opacity;
+    /* COMPORTAMENTO STICKY: 100% colada na esquerda e acompanha o scroll */
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    max-height: 100vh;
+    align-self: flex-start;
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 100;
 
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, visibility 0.3s ease;
+    will-change: margin-left, opacity;
 }
+
+/* Scrollbar sutil para o menu caso a tela vertical seja muito pequena */
+.dash-sidebar::-webkit-scrollbar {
+    width: 4px;
+}
+.dash-sidebar::-webkit-scrollbar-thumb {
+    background: rgba(0, 212, 255, 0.2);
+    border-radius: 4px;
+}
+
 
 
 
