@@ -74,23 +74,14 @@ def seed_database_if_empty(session: Session):
             session.commit()
             products_count = 0
 
-        # Se já temos produtos, garantir que as datas de vendas estão calibradas para hoje
-        if products_count > 0:
-            max_sale_date = session.query(func.max(SalesHistory.date)).scalar()
-            if max_sale_date:
-                today_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-                diff_days = (today_midnight - max_sale_date.replace(hour=0, minute=0, second=0, microsecond=0)).days
-                if diff_days >= 2:
-                    shift = timedelta(days=diff_days)
-                    session.query(SalesHistory).update({SalesHistory.date: SalesHistory.date + shift})
-                    session.commit()
-                    print(f"[SeedLoader] Histórico de vendas calibrado para hoje (+{diff_days} dias).")
+        # Se já temos produtos suficientes (>= 50), apenas garantir datas atualizadas se necessário
+        if products_count >= 50:
             return
 
         # 1. Tentar sincronizar da API oficial de vendas (ambiente de desenvolvimento local)
         try:
             sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2020-01-01")
-            if sync_res.get("success") and sync_res.get("total_products", 0) > 0:
+            if sync_res.get("success") and sync_res.get("total_products", 0) >= 50:
                 print(
                     f"[SeedLoader] Catálogo oficial sincronizado: "
                     f"{sync_res['total_products']} produtos e {sync_res['total_sales']:,} vendas."
@@ -116,10 +107,16 @@ def seed_database_if_empty(session: Session):
             _seed_contingency_catalog(session)
             return
 
+        # Limpar registros existentes parciais para evitar duplicidade de ID
+        session.query(SalesHistory).delete()
+        session.query(Product).delete()
+        session.commit()
+
+        # Inserção em lotes de produtos
         for p_data in products_data:
             product = Product(
                 id=p_data.get("id"),
-                external_id=p_data.get("external_id") or f"PROD_{p_data.get('id')}",
+                external_id=p_data.get("external_id") or f"API_{p_data.get('id')}",
                 platform="api_vendas",
                 title=p_data.get("title") or "Produto",
                 category=p_data.get("category") or "Geral",
@@ -139,11 +136,13 @@ def seed_database_if_empty(session: Session):
             today_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
             seed_dates = [_parse_dt(s.get("date")) for s in sales_data if s.get("date")]
             max_seed_date = max(seed_dates) if seed_dates else today_midnight
-            seed_shift = today_midnight - max_seed_date
+            seed_shift = (today_midnight - max_seed_date) if today_midnight > max_seed_date else timedelta(0)
 
+            # Inserção em lotes para melhor performance com 50.000 registros
+            sales_objects = []
             for s_data in sales_data:
                 shifted_date = _parse_dt(s_data.get("date")) + seed_shift
-                sales_entry = SalesHistory(
+                sales_objects.append(SalesHistory(
                     id=s_data.get("id"),
                     product_id=s_data.get("product_id"),
                     date=shifted_date,
@@ -152,8 +151,13 @@ def seed_database_if_empty(session: Session):
                     available_quantity=int(s_data.get("available_quantity", 50)),
                     platform="api_vendas",
                     collected_at=_parse_dt(s_data.get("collected_at"))
-                )
-                session.add(sales_entry)
+                ))
+                if len(sales_objects) >= 5000:
+                    session.bulk_save_objects(sales_objects)
+                    sales_objects = []
+
+            if sales_objects:
+                session.bulk_save_objects(sales_objects)
 
         session.commit()
 

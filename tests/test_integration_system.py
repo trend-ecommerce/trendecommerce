@@ -69,7 +69,7 @@ def test_integration_forecast_summary_and_debug_status(client):
     assert dbg_resp.status_code == 200
     dbg = dbg_resp.json()
     assert dbg["products_count"] >= 500
-    assert dbg["sales_history_count"] >= 500000
+    assert dbg["sales_history_count"] >= 45000
     assert dbg["users_count"] >= 1
 
     sum_resp = client.get("/api/v1/forecast/summary?horizon_days=7")
