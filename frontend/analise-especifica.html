@@ -16,7 +16,6 @@
 
     <!-- CSS Stylesheets -->
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/login.css">
 </head>
 <body class="dashboard-mode">
     <div id="appRoot" class="app-root dashboard-view">
@@ -109,30 +108,48 @@
                     <!-- Card Detalhado de Análise -->
                     <div class="dash-card specific-analysis-card">
                         <div class="specific-card-header">
-                            <h2 id="specificCardProdTitle" class="specific-prod-title">IPHONE 15 PRO MAX</h2>
-                            <div id="specificCardProdPrice" class="specific-prod-price">PREÇO: R$ 4.342,98</div>
+                            <h2 id="specificCardProdTitle" class="specific-prod-title">PISCA-PISCA DE NATAL LED 100 LÂMPADAS</h2>
+                            <div id="specificCardProdPrice" class="specific-prod-price">PREÇO: R$ 42,90</div>
                         </div>
 
-                        <!-- Barra de Horizonte de Previsão -->
-                        <div class="horizon-toggle-bar">
-                            <span class="horizon-label">Horizonte de Previsão IA:</span>
-                            <button type="button" class="horizon-btn active" data-days="7">7 DIAS</button>
-                            <button type="button" class="horizon-btn" data-days="14">14 DIAS</button>
-                            <button type="button" class="horizon-btn" data-days="30">30 DIAS</button>
+                        <!-- Barra de Controles da Linha do Tempo Híbrida -->
+                        <div class="timeline-controls-bar">
+                            <div class="timeline-control-group">
+                                <span class="timeline-control-label">Histórico Passado:</span>
+                                <div class="timeline-btn-group">
+                                    <button type="button" class="timeline-btn history-range-btn" data-range="1m">1 MÊS</button>
+                                    <button type="button" class="timeline-btn history-range-btn active" data-range="6m">6 MESES</button>
+                                    <button type="button" class="timeline-btn history-range-btn" data-range="1y">1 ANO</button>
+                                    <button type="button" class="timeline-btn history-range-btn" data-range="5y">5 ANOS</button>
+                                </div>
+                            </div>
+                            <div class="timeline-control-divider"></div>
+                            <div class="timeline-control-group">
+                                <span class="timeline-control-label">Projeção IA:</span>
+                                <div class="timeline-btn-group">
+                                    <button type="button" class="timeline-btn horizon-btn" data-days="7">7 DIAS</button>
+                                    <button type="button" class="timeline-btn horizon-btn active" data-days="14">14 DIAS</button>
+                                    <button type="button" class="timeline-btn horizon-btn" data-days="30">30 DIAS</button>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Gráfico Específico Canvas 2D -->
                         <div class="specific-chart-wrap">
                             <canvas id="specificChartCanvas"></canvas>
-                            <div id="specificChartTooltip" class="chart-tooltip-bubble" style="display: none;">
-                                <div class="tooltip-title">PRODUTO</div>
-                                <div class="tooltip-price">R$ 0,00</div>
-                                <div class="tooltip-sold">0 VENDAS PREVISTAS</div>
-                            </div>
+                            <div id="specificChartTooltip" class="chart-tooltip-box chart-tooltip-bubble" style="display: none;"></div>
                         </div>
 
-                        <!-- Grid de KPIs -->
-                        <div class="kpi-grid">
+                        <!-- Grid de KPIs (Histórico + Projeção) -->
+                        <div class="kpi-grid kpi-grid-6col">
+                            <div class="kpi-box">
+                                <span class="kpi-title">MÉDIA HISTÓRICA DIÁRIA</span>
+                                <span id="kpiHistoricalAvg" class="kpi-val text-cyan">-- un/dia</span>
+                            </div>
+                            <div class="kpi-box">
+                                <span class="kpi-title">PICO HISTÓRICO MÁXIMO</span>
+                                <span id="kpiHistoricalPeak" class="kpi-val text-amber">-- un</span>
+                            </div>
                             <div class="kpi-box">
                                 <span class="kpi-title">DEMANDA TOTAL PROJETADA</span>
                                 <span id="kpiPredictedUnits" class="kpi-val">107 un</span>
@@ -146,7 +163,7 @@
                                 <span id="kpiDailyAverage" class="kpi-val">15.3 un/dia</span>
                             </div>
                             <div class="kpi-box">
-                                <span class="kpi-title">ESTOQUE DE SEGURANÇA SUGERIDO</span>
+                                <span class="kpi-title">ESTOQUE DE SEGURANÇA</span>
                                 <span id="kpiStockBuffer" class="kpi-val text-emerald">135 un</span>
                             </div>
                         </div>
@@ -163,6 +180,6 @@
     <script src="js/api.js"></script>
     <script src="js/effects.js"></script>
     <script src="js/sidebar.js"></script>
-    <script src="js/analise-especifica.js"></script>
+    <script src="js/analise-especifica.js?v=2.7"></script>
 </body>
 </html>

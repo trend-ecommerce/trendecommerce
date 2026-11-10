@@ -21,6 +21,19 @@ class TestFeatureEngineer:
         assert "preco_medio_7_dias" in result.columns
         assert "variacao_preco" in result.columns
 
+    def test_trend_features_created(self):
+        """Verifica criacao de features de tendencia."""
+        sample_trends_data = pd.DataFrame({
+            "keyword": ["notebook", "notebook", "notebook", "celular", "celular", "celular"],
+            "date": ["2023-01-01", "2023-01-02", "2023-01-03", "2023-01-01", "2023-01-02", "2023-01-03"],
+            "interest_score": [10.0, 20.0, 30.0, 15.0, 25.0, 35.0]
+        })
+        result = self.engineer.create_trend_features(sample_trends_data)
+        assert "media_pesquisas_7d" in result.columns
+        assert "crescimento_pesquisas" in result.columns
+        assert "tendencia_pesquisa" in result.columns
+        assert "volatilidade_pesquisa" in result.columns
+
     def test_temporal_features_created(self, sample_sales_data):
         """Verifica criação de features temporais."""
         result = self.engineer.create_temporal_features(sample_sales_data)

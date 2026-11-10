@@ -1,5 +1,6 @@
 /**
  * TrendCommerce AI - IA Preditiva Controller
+ * Linha do Tempo Híbrida: Histórico Real + Projeção Futura XGBoost
  * Utilizado exclusivamente na página ia-preditiva.html.
  */
 
@@ -9,13 +10,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         categories: [],
         selectedProduct: null,
         selectedCategory: '',
-        horizonDays: 7,
+        historyRange: '6m',
+        horizonDays: 14,
+        timelineData: null,
         dateDropdownOpen: false,
         catDropdownOpen: false,
-        chartData: {
-            daysLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-            values: [185, 290, 230, 80, 205, 210, 175]
-        },
         points: [],
         hoveredIndex: null
     };
@@ -25,6 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Inicialização
     await loadInitialData();
+    setupTimelineEvents();
     setupDropdownEvents();
     setupCanvasHover();
     setupResize();
@@ -37,116 +37,115 @@ document.addEventListener('DOMContentLoaded', async () => {
             ]);
             state.categories = cats || [];
             state.topProducts = topSales || [];
-            state.selectedProduct = topSales && topSales[0] ? topSales[0] : null;
+            state.selectedProduct = (topSales && topSales.length > 0) ? topSales[0] : null;
 
             renderCategoriesDropdown();
             renderMaisVendidos();
-            await updateChart(state.selectedProduct, state.horizonDays);
+
+            if (state.selectedProduct) {
+                await loadTimeline(state.selectedProduct, state.historyRange, state.horizonDays);
+            }
         } catch (err) {
             console.error('Erro ao carregar dados da IA Preditiva:', err);
         }
     }
 
-    async function fetchChartData(product, horizon) {
-        if (!product) {
-            return {
-                daysLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                values: [185, 290, 230, 80, 205, 210, 175]
-            };
-        }
-
+    async function loadTimeline(product, range, horizon) {
+        if (!product || !product.id) return;
         try {
-            if (window.apiService?.forecast && product.id) {
-                const res = await window.apiService.forecast.predict(product.id, horizon);
-                if (res && res.days && res.days.length === horizon) {
-                    const daysLabels = res.days.map((d, i) => {
-                        if (horizon <= 7) {
-                            const daysMap = {
-                                'Segunda-feira': 'Mon', 'Terça-feira': 'Tue', 'Quarta-feira': 'Wed',
-                                'Quinta-feira': 'Thu', 'Sexta-feira': 'Fri', 'Sábado': 'Sat', 'Domingo': 'Sun'
-                            };
-                            return daysMap[d.day_name] || d.day_name.substring(0, 3);
-                        }
-                        const parts = d.date.split('-');
-                        if (parts.length === 3) return `${parts[2]}/${parts[1]}`;
-                        return `D${i + 1}`;
-                    });
-                    const values = res.days.map(d => Math.round(d.predicted_demand));
-                    return { daysLabels, values };
+            const data = await window.apiService.forecast.timeline(product.id, range, horizon);
+            state.timelineData = data;
+            state.hoveredIndex = null;
+            renderHeader();
+            renderKPIs();
+            drawChart();
+        } catch (err) {
+            console.error('Erro ao carregar linha do tempo do produto:', err);
+        }
+    }
+
+    function renderHeader() {
+        const prod = state.selectedProduct;
+        const titleEl = document.getElementById('iaCardProdTitle');
+        const priceEl = document.getElementById('iaCardProdPrice');
+
+        const title = prod?.title || state.timelineData?.product_title || 'PRODUTO';
+        const price = prod?.price ?? state.timelineData?.price ?? 0;
+
+        if (titleEl) titleEl.textContent = title.toUpperCase();
+        if (priceEl) priceEl.textContent = `PREÇO: R$ ${Number(price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    }
+
+    function renderKPIs() {
+        const m = state.timelineData?.metrics;
+        const kpiHistAvg = document.getElementById('kpiHistoricalAvg');
+        const kpiHistPeak = document.getElementById('kpiHistoricalPeak');
+        const kpiUnits = document.getElementById('kpiForecastTotal');
+        const kpiRevenue = document.getElementById('kpiForecastRevenue');
+        const kpiAverage = document.getElementById('kpiForecastDailyAvg');
+        const kpiBuffer = document.getElementById('kpiForecastSafetyStock');
+
+        if (kpiHistAvg) {
+            kpiHistAvg.textContent = m ? `${Number(m.historical_avg || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} un/dia` : '-- un/dia';
+        }
+        if (kpiHistPeak) {
+            kpiHistPeak.textContent = m ? `${Number(m.historical_peak || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })} un` : '-- un';
+        }
+        if (kpiUnits) {
+            kpiUnits.textContent = m ? `${Number(m.forecast_total || 0).toLocaleString('pt-BR')} un` : '-- un';
+        }
+        if (kpiRevenue) {
+            kpiRevenue.textContent = m ? `R$ ${Number(m.forecast_revenue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00';
+        }
+        if (kpiAverage) {
+            kpiAverage.textContent = m ? `${Number(m.forecast_avg || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} un/dia` : '-- un/dia';
+        }
+        if (kpiBuffer) {
+            kpiBuffer.textContent = m ? `${Number(m.recommended_buffer || 0).toLocaleString('pt-BR')} un` : '-- un';
+        }
+    }
+
+    function setupTimelineEvents() {
+        syncLateralDateDropdown(state.horizonDays);
+        // Seletor de Intervalo Histórico Retroativo (1m, 6m, 1y, 5y)
+        document.querySelectorAll('.history-range-btn').forEach(btn => {
+            btn.onclick = () => {
+                const range = btn.getAttribute('data-range');
+                if (!range || state.historyRange === range) return;
+                state.historyRange = range;
+                document.querySelectorAll('.history-range-btn').forEach(b => {
+                    b.classList.toggle('active', b.getAttribute('data-range') === range);
+                });
+                if (state.selectedProduct) {
+                    loadTimeline(state.selectedProduct, state.historyRange, state.horizonDays);
                 }
-            }
-        } catch (e) {}
-
-        const base7 = [185, 290, 230, 80, 205, 210, 175];
-        const days7 = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const scaleFactor = product.quantity_sold ? Math.max(0.65, Math.min(1.35, product.quantity_sold / 7060)) : 1.0;
-
-        if (horizon === 7) {
-            return {
-                daysLabels: days7,
-                values: base7.map(v => Math.round(v * scaleFactor))
             };
-        }
+        });
 
-        if (horizon === 14) {
-            const base14 = [185, 290, 230, 80, 205, 210, 175, 195, 305, 240, 95, 215, 230, 180];
-            const labels14 = base14.map((_, i) => {
-                const d = new Date();
-                d.setDate(d.getDate() + i);
-                const day = String(d.getDate()).padStart(2, '0');
-                const m = String(d.getMonth() + 1).padStart(2, '0');
-                return `${day}/${m}`;
+        // Seletor de Horizonte Preditivo Futuro (7d, 14d, 30d)
+        document.querySelectorAll('.horizon-btn').forEach(btn => {
+            btn.onclick = () => {
+                const days = parseInt(btn.getAttribute('data-days'), 10);
+                if (!days || state.horizonDays === days) return;
+                state.horizonDays = days;
+                document.querySelectorAll('.horizon-btn').forEach(b => {
+                    b.classList.toggle('active', parseInt(b.getAttribute('data-days'), 10) === days);
+                });
+                syncLateralDateDropdown(days);
+                if (state.selectedProduct) {
+                    loadTimeline(state.selectedProduct, state.historyRange, days);
+                }
+            };
+        });
+    }
+
+    function syncLateralDateDropdown(days) {
+        const menuDate = document.getElementById('menuIaFilterDate');
+        if (menuDate) {
+            menuDate.querySelectorAll('.dropdown-menu-item').forEach(b => {
+                b.classList.toggle('active', parseInt(b.getAttribute('data-days'), 10) === days);
             });
-            return {
-                daysLabels: labels14,
-                values: base14.map(v => Math.round(v * scaleFactor))
-            };
         }
-
-        const pattern = [185, 290, 230, 80, 205, 210, 175, 195, 305, 240, 95, 215, 230, 180];
-        const values30 = Array.from({ length: 30 }, (_, i) => {
-            const base = pattern[i % pattern.length];
-            const wave = Math.round(Math.sin((i / 30) * Math.PI * 4) * 25);
-            return Math.max(60, Math.round((base + wave) * scaleFactor));
-        });
-        const labels30 = values30.map((_, i) => {
-            const d = new Date();
-            d.setDate(d.getDate() + i);
-            const day = String(d.getDate()).padStart(2, '0');
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            return `${day}/${m}`;
-        });
-        return {
-            daysLabels: labels30,
-            values: values30
-        };
-    }
-
-    async function updateChart(prod, horizon) {
-        state.chartData = await fetchChartData(prod, horizon);
-        renderBanner();
-        drawChart();
-    }
-
-    function renderBanner() {
-        const prod = state.selectedProduct || (state.topProducts && state.topProducts[0]);
-        const totalUnits = (state.chartData?.values || []).reduce((acc, curr) => acc + curr, 0);
-        const price = prod?.price || 0;
-        const revenue = totalUnits * price;
-
-        const titleEl = document.getElementById('iaBannerTitle');
-        const metaEl = document.getElementById('iaBannerMeta');
-        const demandEl = document.getElementById('iaBannerDemand');
-        const demandHorizonEl = document.getElementById('iaBannerDemandHorizon');
-        const revEl = document.getElementById('iaBannerRevenue');
-
-        if (titleEl) titleEl.textContent = prod ? prod.title.toUpperCase() : 'PROJEÇÃO DE VENDAS';
-        if (metaEl) {
-            metaEl.innerHTML = `Preço: <strong style="color: #00e5ff">R$ ${price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> • Categoria: ${prod?.category || 'Geral'}`;
-        }
-        if (demandHorizonEl) demandHorizonEl.textContent = `Demanda (${state.horizonDays}d)`;
-        if (demandEl) demandEl.textContent = `${totalUnits.toLocaleString('pt-BR')} un`;
-        if (revEl) revEl.textContent = `R$ ${revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
     }
 
     function renderMaisVendidos() {
@@ -173,12 +172,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         container.querySelectorAll('.ranking-row').forEach(row => {
             row.onclick = () => {
-                const pid = parseInt(row.getAttribute('data-id'));
+                const pid = parseInt(row.getAttribute('data-id'), 10);
                 const prod = state.topProducts.find(p => p.id === pid);
                 if (prod) {
                     state.selectedProduct = prod;
                     renderMaisVendidos();
-                    updateChart(prod, state.horizonDays);
+                    loadTimeline(prod, state.historyRange, state.horizonDays);
                 }
             };
         });
@@ -213,7 +212,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 state.topProducts = await window.apiService.products.getTopSales(5, state.selectedCategory || null);
                 state.selectedProduct = state.topProducts[0] || null;
                 renderMaisVendidos();
-                updateChart(state.selectedProduct, state.horizonDays);
+                if (state.selectedProduct) {
+                    loadTimeline(state.selectedProduct, state.historyRange, state.horizonDays);
+                }
             };
         });
     }
@@ -239,11 +240,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             menuDate.querySelectorAll('.dropdown-menu-item').forEach(btn => {
                 btn.onclick = (e) => {
                     e.stopPropagation();
-                    state.horizonDays = parseInt(btn.getAttribute('data-days'));
+                    const days = parseInt(btn.getAttribute('data-days'), 10);
+                    state.horizonDays = days;
                     state.dateDropdownOpen = false;
                     menuDate.querySelectorAll('.dropdown-menu-item').forEach(b => b.classList.toggle('active', b === btn));
+                    document.querySelectorAll('.horizon-btn').forEach(b => {
+                        b.classList.toggle('active', parseInt(b.getAttribute('data-days'), 10) === days);
+                    });
                     updateDropdownUI();
-                    updateChart(state.selectedProduct, state.horizonDays);
+                    if (state.selectedProduct) {
+                        loadTimeline(state.selectedProduct, state.historyRange, days);
+                    }
                 };
             });
         }
@@ -303,139 +310,335 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function drawChart() {
-        if (!canvas || !canvas.parentElement) return;
+        if (!canvas || !canvas.parentElement || !state.timelineData) return;
 
         const parentW = canvas.parentElement.getBoundingClientRect().width || canvas.parentElement.clientWidth;
         if (!parentW || parentW <= 0) return;
 
         const ctx = canvas.getContext('2d');
         const width = canvas.width = Math.round(parentW);
-        const height = canvas.height = 240;
+        const height = canvas.height = 260;
 
         ctx.clearRect(0, 0, width, height);
 
-        const daysLabels = state.chartData?.daysLabels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const values = state.chartData?.values || [185, 290, 230, 80, 205, 210, 175];
+        const hist = state.timelineData.history_points || [];
+        const fore = state.timelineData.forecast_points || [];
 
-        const highestVal = Math.max(350, ...values);
-        const maxVal = Math.ceil((highestVal * 1.15) / 50) * 50;
+        if (hist.length === 0 && fore.length === 0) return;
 
-        const padLeft = 45;
-        const padRight = 30;
-        const padTop = 30;
+        // Dimensões da área de plotagem
+        const padLeft = 52;
+        const padRight = 32;
+        const padTop = 45;
         const padBottom = 35;
 
         const chartW = width - padLeft - padRight;
         const chartH = height - padTop - padBottom;
 
-        // Grid Horizontal
-        ctx.strokeStyle = 'rgba(0, 150, 255, 0.15)';
-        ctx.lineWidth = 1;
-        ctx.fillStyle = '#8da2bd';
-        ctx.font = '11px Plus Jakarta Sans';
-        ctx.textAlign = 'right';
+        // Mapeamento e normalização proporcional de pontos
+        const totalPointsCount = hist.length + fore.length;
+        const points = [];
 
-        const step = maxVal / 4;
-        [0, step, step * 2, step * 3, maxVal].forEach(lvl => {
-            const y = padTop + chartH - (lvl / maxVal) * chartH;
+        hist.forEach((h, i) => {
+            const ratio = totalPointsCount > 1 ? i / (totalPointsCount - 1) : 0;
+            const x = padLeft + ratio * chartW;
+            const val = Number(h.demand || 0);
+
+            let dtObj = null;
+            let rawDateStr = String(h.date || '');
+            if (rawDateStr.includes('/')) {
+                const [d, m, y] = rawDateStr.split('/').map(Number);
+                if (y && m && d) {
+                    dtObj = new Date(y, m - 1, d);
+                    rawDateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                }
+            } else if (rawDateStr.includes('-')) {
+                const parts = rawDateStr.split('-').map(Number);
+                if (parts[0] > 1000) {
+                    dtObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                }
+            }
+
+            points.push({
+                x,
+                value: val,
+                demand: val,
+                date: h.date,
+                rawDate: rawDateStr,
+                dtObj,
+                label: h.label,
+                is_real: true,
+                isForecast: false,
+                index: i
+            });
+        });
+
+        fore.forEach((f, i) => {
+            const globalIdx = hist.length + i;
+            const ratio = totalPointsCount > 1 ? globalIdx / (totalPointsCount - 1) : 1;
+            const x = padLeft + ratio * chartW;
+            const val = Number(f.predicted_demand || 0);
+
+            let dtObj = null;
+            let rawDateStr = String(f.date || '');
+            if (rawDateStr.includes('/')) {
+                const [d, m, y] = rawDateStr.split('/').map(Number);
+                if (y && m && d) {
+                    dtObj = new Date(y, m - 1, d);
+                    rawDateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                }
+            } else if (rawDateStr.includes('-')) {
+                const parts = rawDateStr.split('-').map(Number);
+                if (parts[0] > 1000) {
+                    dtObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                }
+            }
+
+            points.push({
+                x,
+                value: val,
+                predicted_demand: val,
+                confidence_min: f.confidence_min,
+                confidence_max: f.confidence_max,
+                date: f.date,
+                rawDate: rawDateStr,
+                dtObj,
+                label: f.label,
+                is_real: false,
+                isForecast: true,
+                index: globalIdx
+            });
+        });
+
+        // A) Escala Vertical Dinâmica Linear [minVal, maxVal] (Estilo Google Finance)
+        const rawValues = points.map(p => Number(p.value) || 0);
+        const dataMin = rawValues.length ? Math.min(...rawValues) : 0;
+        const dataMax = rawValues.length ? Math.max(...rawValues) : 100;
+        const spread = Math.max(dataMax - dataMin, dataMax * 0.15, 8);
+
+        const rawStep = spread / 4;
+        const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+        const residual = rawStep / mag;
+        const niceStep = residual <= 1 ? mag : residual <= 2 ? 2 * mag : residual <= 5 ? 5 * mag : 10 * mag;
+
+        const minVal = Math.max(0, Math.floor((dataMin - spread * 0.08) / niceStep) * niceStep);
+        const maxVal = Math.ceil((dataMax + spread * 0.08) / niceStep) * niceStep;
+        const valRange = Math.max(1, maxVal - minVal);
+
+        const getY = (val) => padTop + chartH - ((val - minVal) / valRange) * chartH;
+
+        points.forEach(p => {
+            p.y = getY(p.value);
+        });
+
+        state.points = points;
+
+        // Grade horizontal com 5 linhas (i = 0 até 4) e rótulos Y à esquerda
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+        ctx.lineWidth = 1;
+        ctx.fillStyle = '#9aa0a6';
+        ctx.font = '500 11px Inter, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        for (let i = 0; i <= 4; i++) {
+            const y = padTop + (i / 4) * chartH;
+            const val = Math.round(maxVal - (i / 4) * valRange);
+            const labelText = val.toLocaleString('pt-BR');
+
             ctx.beginPath();
             ctx.moveTo(padLeft, y);
             ctx.lineTo(width - padRight, y);
             ctx.stroke();
-            ctx.fillText(Math.round(lvl).toString(), padLeft - 10, y + 4);
-        });
 
-        // Pontos X, Y
-        const points = values.map((val, i) => {
-            const x = padLeft + (i / Math.max(1, values.length - 1)) * chartW;
-            const y = padTop + chartH - (val / maxVal) * chartH;
-            return { x, y, val, day: daysLabels[i], index: i };
-        });
-        state.points = points;
-
-        // Labels X
-        ctx.textAlign = 'center';
-        const totalPoints = points.length;
-        points.forEach((p, i) => {
-            let showLabel = true;
-            if (totalPoints > 20) {
-                showLabel = (i % 5 === 0) || (i === totalPoints - 1);
-            } else if (totalPoints > 10) {
-                showLabel = (i % 2 === 0) || (i === totalPoints - 1);
-            }
-
-            if (showLabel || state.hoveredIndex === i) {
-                ctx.fillStyle = (state.hoveredIndex === i) ? '#00f0ff' : '#8da2bd';
-                ctx.font = (state.hoveredIndex === i) ? 'bold 11px Plus Jakarta Sans' : '11px Plus Jakarta Sans';
-                ctx.fillText(p.day, p.x, height - 10);
-            }
-        });
-
-        // Área com gradiente
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].x, points[i].y);
+            ctx.fillText(labelText, 8, y);
         }
-        ctx.lineTo(points[points.length - 1].x, padTop + chartH);
-        ctx.lineTo(points[0].x, padTop + chartH);
-        ctx.closePath();
 
-        const grad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
-        grad.addColorStop(0, 'rgba(0, 180, 216, 0.25)');
-        grad.addColorStop(1, 'rgba(0, 180, 216, 0.0)');
-        ctx.fillStyle = grad;
-        ctx.fill();
+        const histPoints = points.filter(p => p.is_real);
+        const forePoints = points.filter(p => !p.is_real);
+        let lastHistPoint = histPoints.length > 0 ? histPoints[histPoints.length - 1] : null;
 
-        // Linha Principal
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].x, points[i].y);
+        let xToday = padLeft + chartW * 0.7;
+        if (histPoints.length > 0 && forePoints.length > 0) {
+            xToday = (lastHistPoint.x + forePoints[0].x) / 2;
+        } else if (histPoints.length > 0) {
+            xToday = lastHistPoint.x;
         }
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = totalPoints > 20 ? 2 : 3;
-        ctx.stroke();
 
-        // Linha guia vertical se hovered
-        if (state.hoveredIndex !== null && points[state.hoveredIndex]) {
-            const hp = points[state.hoveredIndex];
+        // B) Passado Real (Gradiente Suave + Linha #38bdf8 sem bolinhas estáticas)
+        if (histPoints.length > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(histPoints[0].x, histPoints[0].y);
+            for (let i = 1; i < histPoints.length; i++) {
+                ctx.lineTo(histPoints[i].x, histPoints[i].y);
+            }
+            ctx.lineTo(histPoints[histPoints.length - 1].x, padTop + chartH);
+            ctx.lineTo(histPoints[0].x, padTop + chartH);
+            ctx.closePath();
+
+            const histGrad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
+            histGrad.addColorStop(0, 'rgba(56, 189, 248, 0.20)');
+            histGrad.addColorStop(1, 'rgba(56, 189, 248, 0.0)');
+            ctx.fillStyle = histGrad;
+            ctx.fill();
+            ctx.restore();
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(histPoints[0].x, histPoints[0].y);
+            for (let i = 1; i < histPoints.length; i++) {
+                ctx.lineTo(histPoints[i].x, histPoints[i].y);
+            }
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.2;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Projeção IA (Gradiente Suave + Linha #a855f7)
+        if (forePoints.length > 0) {
+            ctx.save();
+            ctx.beginPath();
+            if (lastHistPoint) {
+                ctx.moveTo(lastHistPoint.x, lastHistPoint.y);
+            } else {
+                ctx.moveTo(forePoints[0].x, forePoints[0].y);
+            }
+            forePoints.forEach(p => {
+                ctx.lineTo(p.x, p.y);
+            });
+            ctx.lineTo(forePoints[forePoints.length - 1].x, padTop + chartH);
+            const startX = lastHistPoint ? lastHistPoint.x : forePoints[0].x;
+            ctx.lineTo(startX, padTop + chartH);
+            ctx.closePath();
+
+            const foreGrad = ctx.createLinearGradient(0, padTop, 0, padTop + chartH);
+            foreGrad.addColorStop(0, 'rgba(168, 85, 247, 0.18)');
+            foreGrad.addColorStop(1, 'rgba(168, 85, 247, 0.0)');
+            ctx.fillStyle = foreGrad;
+            ctx.fill();
+            ctx.restore();
+
+            ctx.save();
+            ctx.beginPath();
+            if (lastHistPoint) {
+                ctx.moveTo(lastHistPoint.x, lastHistPoint.y);
+            } else {
+                ctx.moveTo(forePoints[0].x, forePoints[0].y);
+            }
+            forePoints.forEach(p => {
+                ctx.lineTo(p.x, p.y);
+            });
+            ctx.strokeStyle = '#a855f7';
+            ctx.lineWidth = 2.2;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Linha divisória sutil na transição entre histórico e projeção
+        if (histPoints.length > 0 && forePoints.length > 0) {
             ctx.save();
             ctx.setLineDash([3, 3]);
-            ctx.strokeStyle = 'rgba(0, 212, 255, 0.45)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(xToday, padTop);
+            ctx.lineTo(xToday, padTop + chartH);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // C) Eixo X com Linha de Base e Ticks Verticais (|) estilo Google Finance
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, padTop + chartH);
+        ctx.lineTo(width - padRight, padTop + chartH);
+        ctx.stroke();
+
+        const numTicks = Math.min(5, Math.max(3, Math.floor(chartW / 180)));
+        const tickIndices = [];
+        if (points.length <= numTicks) {
+            for (let i = 0; i < points.length; i++) tickIndices.push(i);
+        } else {
+            for (let t = 0; t < numTicks; t++) {
+                const frac = 0.12 + (t / (numTicks - 1)) * 0.76;
+                const idx = Math.round(frac * (points.length - 1));
+                if (!tickIndices.includes(idx)) tickIndices.push(idx);
+            }
+        }
+
+        const MesShort = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        ctx.font = '500 11px Inter, sans-serif';
+        ctx.fillStyle = '#9aa0a6';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+
+        const usedLabels = new Set();
+        tickIndices.forEach(idx => {
+            const p = points[idx];
+            if (!p) return;
+
+            let dateStr = p.label || p.date;
+            if (p.dtObj) {
+                if (state.historyRange === '5y') {
+                    dateStr = `${MesShort[p.dtObj.getMonth()]} ${String(p.dtObj.getFullYear()).slice(-2)}`;
+                } else {
+                    dateStr = `${p.dtObj.getDate()} ${MesShort[p.dtObj.getMonth()]}`;
+                }
+            }
+            if (usedLabels.has(dateStr)) return;
+            usedLabels.add(dateStr);
+
+            ctx.beginPath();
+            ctx.moveTo(p.x, padTop + chartH);
+            ctx.lineTo(p.x, padTop + chartH + 5);
+            ctx.stroke();
+
+            ctx.fillText(dateStr, p.x, padTop + chartH + 8);
+        });
+        ctx.restore();
+
+        // D) Scrubber Vertical Tracejado + Ponto Único com Halo
+        if (state.hoveredIndex !== null && state.hoveredIndex >= 0 && points[state.hoveredIndex]) {
+            const hp = points[state.hoveredIndex];
+
+            // Linha vertical pontilhada
+            ctx.save();
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(hp.x, padTop);
             ctx.lineTo(hp.x, padTop + chartH);
             ctx.stroke();
             ctx.restore();
-        }
 
-        // Círculos
-        const dotRadius = totalPoints > 20 ? 3.5 : 5;
-        const hoverRadius = totalPoints > 20 ? 5.5 : 7;
-        const haloRadius = totalPoints > 20 ? 9 : 11;
-
-        points.forEach((p, i) => {
-            const isHovered = (state.hoveredIndex === i);
-
-            if (isHovered) {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, haloRadius, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(0, 240, 255, 0.25)';
-                ctx.fill();
-            }
-
+            // Halo translúcido (radius: 9)
+            ctx.save();
             ctx.beginPath();
-            ctx.arc(p.x, p.y, isHovered ? hoverRadius : dotRadius, 0, Math.PI * 2);
-            ctx.fillStyle = isHovered ? '#ffffff' : '#00f0ff';
-            ctx.shadowColor = '#00d4ff';
+            ctx.arc(hp.x, hp.y, 9, 0, Math.PI * 2);
+            ctx.fillStyle = hp.is_real ? 'rgba(56, 189, 248, 0.22)' : 'rgba(168, 85, 247, 0.22)';
             ctx.fill();
+            ctx.restore();
 
-            ctx.strokeStyle = isHovered ? '#00f0ff' : '#07172b';
-            ctx.lineWidth = isHovered ? 2.5 : 2;
+            // Ponto sólido único na curva (radius: 5)
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(hp.x, hp.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = hp.is_real ? '#38bdf8' : '#a855f7';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.8;
             ctx.stroke();
-        });
+            ctx.restore();
+        }
     }
 
     function setupCanvasHover() {
@@ -443,56 +646,83 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const updateHover = (clientX, clientY) => {
             const rect = canvas.getBoundingClientRect();
-            const mouseX = clientX - rect.left;
-            const mouseY = clientY - rect.top;
+            if (!rect.width || !rect.height) return;
+
+            // Compensação de proporção e telas de alto DPI (Windows 125%/150%)
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mouseX = (clientX - rect.left) * scaleX;
+            const mouseY = (clientY - rect.top) * scaleY;
 
             const points = state.points || [];
+            if (!points || points.length === 0) return;
+
+            const padLeft = 52;
+            const padRight = 32;
+            const width = canvas.width;
+
+            // Limite da área horizontal útil do gráfico
+            const inHorizontalBounds = mouseX >= (padLeft - 10) && mouseX <= (width - padRight + 10);
+
+            if (!inHorizontalBounds) {
+                clearHover();
+                return;
+            }
+
+            // Algoritmo Scrubber Google Finance: encontra o dia mais próximo no eixo X
             let matchedPoint = null;
-            let minDistance = 25;
+            let minXDist = Infinity;
 
-            for (const p of points) {
-                const dist = Math.hypot(mouseX - p.x, mouseY - p.y);
-                const xDist = Math.abs(mouseX - p.x);
-                const yInRange = mouseY >= 20 && mouseY <= 220;
-                const effectiveDist = (points.length > 20 && yInRange) ? Math.min(dist, xDist * 1.4) : dist;
-
-                if (effectiveDist < minDistance) {
-                    minDistance = effectiveDist;
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                const dist = Math.abs(mouseX - p.x);
+                if (dist < minXDist) {
+                    minXDist = dist;
                     matchedPoint = p;
                 }
             }
 
             if (matchedPoint) {
-                canvas.style.cursor = 'pointer';
+                canvas.style.cursor = 'crosshair';
+
+                // Atualiza o desenho e o tooltip apenas quando o ponto ativo muda
                 if (state.hoveredIndex !== matchedPoint.index) {
                     state.hoveredIndex = matchedPoint.index;
                     drawChart();
 
-                    const currentProd = state.selectedProduct || (state.topProducts && state.topProducts[0]);
-                    const bubbleHalfW = 85;
-                    const canvasW = canvas.width || 600;
-                    const clampedX = Math.max(bubbleHalfW + 5, Math.min(canvasW - bubbleHalfW - 5, matchedPoint.x));
-                    const dateSuffix = state.horizonDays === 7 ? '' : ` • ${matchedPoint.day}`;
+                    const Sem = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                    const Mes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                    const [yy, mm, dd] = String(matchedPoint.rawDate || '').split('-').map(Number);
+                    const dtObj = (yy && mm && dd) ? new Date(yy, mm - 1, dd) : (matchedPoint.dtObj || null);
+                    const datePillStr = dtObj
+                        ? `${Sem[dtObj.getDay()]}, ${dd || dtObj.getDate()} ${Mes[(mm ? mm - 1 : dtObj.getMonth())]} ${yy || dtObj.getFullYear()}`
+                        : (matchedPoint.date || matchedPoint.label);
+                    const valStr = `${Math.round(matchedPoint.value).toLocaleString('pt-BR')} un`;
+                    const tagForecast = matchedPoint.isForecast
+                        ? `<span style="color:#c084fc;font-size:11px;font-weight:600;margin-left:6px;">• IA</span>`
+                        : '';
 
-                    tooltip.style.display = 'block';
+                    tooltip.innerHTML = `
+                        <span style="color:#ffffff;font-weight:700;font-size:13px;margin-right:8px;">${valStr}</span>
+                        <span style="color:#9aa0a6;font-weight:500;font-size:12px;">${datePillStr}</span>
+                        ${tagForecast}
+                    `;
+
+                    tooltip.style.display = 'flex';
+                    tooltip.style.alignItems = 'center';
+                    const bubbleHalfW = (tooltip.offsetWidth || 140) / 2;
+                    const cssW = rect.width || canvas.width || 600;
+                    const cssX = matchedPoint.x / scaleX;
+                    const clampedX = Math.max(bubbleHalfW + 8, Math.min(cssW - bubbleHalfW - 8, cssX));
+                    const padTop = 45;
+                    const padTopCss = (padTop / scaleY);
                     tooltip.style.left = `${clampedX}px`;
-                    tooltip.style.top = `${Math.max(65, matchedPoint.y - 12)}px`;
-                    tooltip.querySelector('.tooltip-title').textContent = currentProd ? currentProd.title.toUpperCase().slice(0, 24) : 'PRODUTO';
-                    tooltip.querySelector('.tooltip-price').textContent = currentProd ? `R$ ${currentProd.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 429,00';
-                    tooltip.querySelector('.tooltip-sold').textContent = `${matchedPoint.val.toLocaleString('pt-BR')} VENDIDOS${dateSuffix}`;
-                }
-            } else {
-                canvas.style.cursor = 'default';
-                if (state.hoveredIndex !== null) {
-                    state.hoveredIndex = null;
-                    drawChart();
-                    tooltip.style.display = 'none';
+                    tooltip.style.top = `${padTopCss}px`;
                 }
             }
         };
 
-        canvas.onmousemove = (e) => updateHover(e.clientX, e.clientY);
-        canvas.onmouseleave = () => {
+        const clearHover = () => {
             canvas.style.cursor = 'default';
             if (state.hoveredIndex !== null) {
                 state.hoveredIndex = null;
@@ -500,26 +730,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             tooltip.style.display = 'none';
         };
+
+        canvas.onmousemove = (e) => updateHover(e.clientX, e.clientY);
+        canvas.onmouseleave = clearHover;
+
+        // Suporte a Touch para Celulares e Tablets
         canvas.ontouchstart = (e) => {
             if (e.touches && e.touches[0]) updateHover(e.touches[0].clientX, e.touches[0].clientY);
         };
         canvas.ontouchmove = (e) => {
             if (e.touches && e.touches[0]) updateHover(e.touches[0].clientX, e.touches[0].clientY);
         };
-        canvas.ontouchend = () => {
-            state.hoveredIndex = null;
-            drawChart();
-            tooltip.style.display = 'none';
-        };
+        canvas.ontouchend = clearHover;
     }
 
     function setupResize() {
         let animFrame;
         window.addEventListener('resize', () => {
             cancelAnimationFrame(animFrame);
-            animFrame = requestAnimationFrame(drawChart);
+            animFrame = requestAnimationFrame(() => {
+                drawChart();
+            });
         });
     }
+
 
     // Exportação direta para Excel (.CSV)
     async function handleExportReport() {
