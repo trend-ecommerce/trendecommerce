@@ -17,9 +17,15 @@ async def lifespan(app: FastAPI):
     db_manager = get_db_instance()
     Base.metadata.create_all(db_manager.engine)
 
-    # Garantir dados iniciais e usuário administrador
+    # 1. Garantir bancos (API + Local) calibrados até 2026-11-30 com assinatura determinística
+    try:
+        from src.database.seed_loader import ensure_calibrated_databases
+        ensure_calibrated_databases(db_manager)
+    except Exception as err:
+        print(f"[TrendCommerce] Erro na verificação de calibragem inicial: {err}")
+
+    # 2. Garantir fallback de seed e usuário administrador
     with db_manager.session() as session:
-        # 1. Injetar catálogo de produtos e histórico caso o banco esteja vazio
         try:
             from src.database.seed_loader import seed_database_if_empty
             seed_database_if_empty(session)

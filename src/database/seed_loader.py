@@ -1,105 +1,259 @@
-"""Carregador de dados iniciais (Seed Data).
+"""Carregador e verificador de calibragem dos bancos (Seed Data).
 
-Sincroniza automaticamente o catálogo de produtos e o histórico de vendas
-da API de Histórico de Vendas caso o banco de dados esteja vazio ou contenha
-registros fora do padrão da API oficial.
+Garante automaticamente na inicialização que tanto o banco da API
+(historico_vendas.db, quando presente) quanto o banco local/Render
+(data/trendcommerce_dev.db ou PostgreSQL via DATABASE_URL) contenham
+exatamente os 500 produtos oficiais e cobertura histórica 2020-01-01..2026-11-30
+calibrada deterministicamente. Nunca carrega catálogos fictícios legados.
 """
 
 import json
-from datetime import datetime
+import logging
+import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
+
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.database.models import Product, SalesHistory
 from src.services.vendas_api_client import vendas_client
 
+logger = logging.getLogger(__name__)
 
-def _parse_dt(val):
-    if not val:
-        return datetime.utcnow()
+TARGET_MIN_DATE = "2020-01-01"
+TARGET_MAX_DATE = "2026-11-30"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CATALOG_JSON_PATH = PROJECT_ROOT / "data" / "catalog_500_products.json"
+EXACT_CALIBRATION_SIGNATURES = (
+    (1, "2026-11-30", 68),
+    (1, "2026-11-27", 251),
+    (124, "2026-10-29", 1133),
+    (1, "2020-01-25", 46),
+)
+OFFICIAL_ANCHOR_PRODUCTS = {
+    1: ("Notebook Dell Inspiron 15 i5 8GB SSD 256GB", 4107.23),
+    124: ("Pisca-pisca de Natal LED 14 Lâmpadas 8 Funções", 61.37),
+}
+
+
+def _load_expected_catalog_signatures() -> dict[int, tuple[str, float]]:
+    """Carrega mapa (id -> (titulo, preco_base)) oficial a partir de data/catalog_500_products.json."""
+    expected: dict[int, tuple[str, float]] = dict(OFFICIAL_ANCHOR_PRODUCTS)
+    if CATALOG_JSON_PATH.exists():
+        try:
+            with open(CATALOG_JSON_PATH, "r", encoding="utf-8") as f:
+                items = json.load(f)
+            if isinstance(items, list):
+                for item in items:
+                    pid = int(item["id"])
+                    expected[pid] = (
+                        str(item.get("nome") or ""),
+                        round(float(item.get("preco_base") or 0.0), 2),
+                    )
+        except Exception as err:
+            logger.warning(f"[SeedLoader] Falha ao ler assinaturas de {CATALOG_JSON_PATH}: {err}")
+    return expected
+
+
+def _is_api_db_calibrated(api_db_path: Optional[Path]) -> bool:
+    """Verifica em poucos milissegundos se historico_vendas.db possui cobertura até 2026-11-30 e assinatura calibrada."""
+    if not api_db_path or not api_db_path.exists():
+        return False
+    conn: Optional[sqlite3.Connection] = None
     try:
-        return datetime.fromisoformat(val)
-    except Exception:
-        return datetime.utcnow()
+        conn = sqlite3.connect(str(api_db_path), timeout=10.0)
+        max_row = conn.execute("SELECT MAX(data_venda) FROM vendas_historicas").fetchone()
+        if not max_row or not max_row[0] or str(max_row[0])[:10] != TARGET_MAX_DATE:
+            return False
+
+        for pid, date_str, expected_qty in EXACT_CALIBRATION_SIGNATURES:
+            row = conn.execute(
+                "SELECT vendas FROM vendas_historicas WHERE produto_id = ? AND data_venda = ?",
+                (pid, date_str),
+            ).fetchone()
+            if not row or int(row[0]) != expected_qty:
+                return False
+        return True
+    except Exception as err:
+        logger.warning(f"[SeedLoader] Falha ao verificar assinatura em {api_db_path}: {err}")
+        return False
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def _is_local_db_calibrated(session: Session, exact_api_signatures: bool = True) -> bool:
+    """Verifica se o banco local/Render possui exatamente os 500 produtos oficiais (títulos, preços e plataforma)
+    e cobertura histórica calibrada 2020-01-01..2026-11-30.
+    """
+    try:
+        prod_rows = session.query(Product.id, Product.title, Product.price, Product.platform).all()
+        min_expected_prods = 500 if (exact_api_signatures or CATALOG_JSON_PATH.exists()) else 1
+        if len(prod_rows) < min_expected_prods:
+            return False
+
+        if any(str(r[3]) != "api_vendas" for r in prod_rows):
+            return False
+
+        # Rejeita imediatamente catálogos fictícios/divergentes (ex: Produto 124 != Pisca-pisca de Natal)
+        existing_by_id = {int(r[0]): (str(r[1]), round(float(r[2] or 0.0), 2)) for r in prod_rows}
+        expected_catalog = _load_expected_catalog_signatures()
+        for pid, exp_pair in expected_catalog.items():
+            if existing_by_id.get(pid) != exp_pair:
+                logger.warning(
+                    f"[SeedLoader] Produto divergente detectado (id={pid}: atual={existing_by_id.get(pid)} vs oficial={exp_pair}). Recalibração será executada."
+                )
+                return False
+
+        date_bounds = session.query(
+            func.min(SalesHistory.date),
+            func.max(SalesHistory.date),
+        ).first()
+        if not date_bounds or not date_bounds[0] or not date_bounds[1]:
+            return False
+        if str(date_bounds[0])[:10] != TARGET_MIN_DATE or str(date_bounds[1])[:10] != TARGET_MAX_DATE:
+            return False
+
+        for pid, date_str, expected_qty in EXACT_CALIBRATION_SIGNATURES:
+            target_dt = datetime.strptime(date_str, "%Y-%m-%d")
+            qty = (
+                session.query(SalesHistory.quantity_sold)
+                .filter(
+                    SalesHistory.product_id == pid,
+                    SalesHistory.date >= (target_dt - timedelta(days=1)),
+                    SalesHistory.date < (target_dt + timedelta(days=1)),
+                    func.date(SalesHistory.date) == date_str,
+                )
+                .scalar()
+            )
+            if qty is None or int(qty) != expected_qty:
+                return False
+
+        # Verifica que o último produto oficial (500) também recebeu a ponta final (evita carga truncada)
+        if min_expected_prods >= 500:
+            tail_dt = datetime.strptime(TARGET_MAX_DATE, "%Y-%m-%d")
+            p500_tail = (
+                session.query(SalesHistory.id)
+                .filter(
+                    SalesHistory.product_id == 500,
+                    SalesHistory.date >= (tail_dt - timedelta(days=1)),
+                    SalesHistory.date < (tail_dt + timedelta(days=1)),
+                    func.date(SalesHistory.date) == TARGET_MAX_DATE,
+                )
+                .first()
+            )
+            if p500_tail is None:
+                return False
+
+        return True
+    except Exception as err:
+        logger.warning(f"[SeedLoader] Falha ao verificar assinatura no banco local: {err}")
+        return False
+
+
+def ensure_calibrated_databases(db_manager=None) -> bool:
+    """Verifica na inicialização se historico_vendas.db (se disponível) e o banco local/Render
+    contêm o catálogo oficial completo e a série calibrada até 2026-11-30. Caso contrário,
+    limpa registros divergentes e executa scripts.update_historical_data_to_nov30.main().
+    """
+    if db_manager is None:
+        from src.api.dependencies import get_db_instance
+        db_manager = get_db_instance()
+
+    api_db_path = vendas_client.get_database_path()
+    api_ok = _is_api_db_calibrated(api_db_path) if api_db_path else True
+    use_exact = bool(api_db_path or CATALOG_JSON_PATH.exists())
+
+    local_ok = False
+    with db_manager.session() as check_session:
+        local_ok = _is_local_db_calibrated(
+            check_session,
+            exact_api_signatures=use_exact,
+        )
+        # Se houver produtos sintéticos ou catálogo divergente do oficial, limpar antes de sincronizar/recriar
+        if not local_ok:
+            try:
+                has_stale = check_session.query(Product.id).first() is not None
+                if has_stale:
+                    non_api_count = check_session.query(Product).filter(Product.platform != "api_vendas").count()
+                    p124_row = check_session.query(Product.title, Product.price).filter(Product.id == 124).first()
+                    p124_bad = (not p124_row) or (str(p124_row[0]) != OFFICIAL_ANCHOR_PRODUCTS[124][0])
+                    if non_api_count > 0 or p124_bad:
+                        logger.warning("[SeedLoader] Removendo produtos antigos/fictícios para restaurar catálogo oficial de 500 produtos...")
+                        check_session.query(SalesHistory).delete()
+                        check_session.query(Product).delete()
+                        check_session.commit()
+            except Exception:
+                check_session.rollback()
+
+    if api_ok and local_ok:
+        return True
+
+    can_calibrate = bool(
+        api_db_path
+        or CATALOG_JSON_PATH.exists()
+        or (PROJECT_ROOT / "data" / "trendcommerce_dev.db").exists()
+    )
+    if can_calibrate:
+        print(
+            "[SeedLoader] Catálogo oficial ou assinatura calibrada (2026-11-30 / P1=68 / P124=1133) "
+            "ausente ou divergente. Executando recalibração e sincronização automática..."
+        )
+        try:
+            from scripts.update_historical_data_to_nov30 import main as run_update_nov30
+            run_update_nov30()
+            return True
+        except Exception as err:
+            logger.error(f"[SeedLoader] Erro na recalibração automática: {err}")
+            return False
+
+    return False
 
 
 def seed_database_if_empty(session: Session):
-    """Sincroniza produtos e histórico da API de Vendas se o banco estiver vazio ou desatualizado."""
+    """Garante catálogo oficial dos 500 produtos e histórico calibrado até 2026-11-30 (sem fallback fictício)."""
     try:
-        products_count = session.query(Product).count()
-        non_api_count = session.query(Product).filter(
-            Product.platform != "api_vendas"
-        ).count()
+        api_db_path = vendas_client.get_database_path()
+        api_ok = _is_api_db_calibrated(api_db_path) if api_db_path else True
+        use_exact = bool(api_db_path or CATALOG_JSON_PATH.exists())
+        local_ok = _is_local_db_calibrated(session, exact_api_signatures=use_exact)
 
-        # Se o banco estiver vazio ou contiver produtos que não são da API oficial, sincronizar
-        if products_count == 0 or non_api_count > 0:
-            if non_api_count > 0:
+        if api_ok and local_ok:
+            return
+
+        # Se o banco contiver catálogo divergente/fictício antigo, limpar antes de reconstruir
+        has_products = session.query(Product.id).first() is not None
+        if has_products:
+            non_api_count = session.query(Product).filter(Product.platform != "api_vendas").count()
+            p124_row = session.query(Product.title, Product.price).filter(Product.id == 124).first()
+            p124_bad = (not p124_row) or (str(p124_row[0]) != OFFICIAL_ANCHOR_PRODUCTS[124][0])
+            if non_api_count > 0 or p124_bad:
                 session.query(SalesHistory).delete()
                 session.query(Product).delete()
                 session.commit()
+            else:
+                session.rollback()
+        else:
+            # Libera qualquer transação de leitura aberta no SQLite antes de gravar em lote
+            session.rollback()
 
-            sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2020-01-01")
-            if sync_res.get("success") and sync_res.get("total_products", 0) > 0:
-                print(
-                    f"[SeedLoader] Catálogo oficial sincronizado: "
-                    f"{sync_res['total_products']} produtos e {sync_res['total_sales']:,} vendas."
-                )
+        can_calibrate = bool(
+            api_db_path
+            or CATALOG_JSON_PATH.exists()
+            or (PROJECT_ROOT / "data" / "trendcommerce_dev.db").exists()
+        )
+        if can_calibrate:
+            try:
+                from scripts.update_historical_data_to_nov30 import main as run_update_nov30
+                run_update_nov30()
+                session.expire_all()
                 return
-
-        # Fallback para initial_seed.json caso a API externa não esteja acessível e o banco esteja vazio
-        if session.query(Product).count() > 0:
-            return
-
-        seed_file = Path(__file__).parent.parent.parent / "data" / "initial_seed.json"
-        if not seed_file.exists():
-            return
-
-        with open(seed_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        products_data = data.get("products", [])
-        sales_data = data.get("sales_history", [])
-
-        for p_data in products_data:
-            product = Product(
-                id=p_data.get("id"),
-                external_id=p_data.get("external_id") or f"PROD_{p_data.get('id')}",
-                platform="api_vendas",
-                title=p_data.get("title") or "Produto",
-                category=p_data.get("category") or "Geral",
-                price=float(p_data.get("price") or 100.0),
-                currency=p_data.get("currency") or "BRL",
-                condition=p_data.get("condition") or "new",
-                url=p_data.get("url"),
-                attributes=p_data.get("attributes"),
-                created_at=_parse_dt(p_data.get("created_at")),
-                updated_at=_parse_dt(p_data.get("updated_at")),
-                is_active=bool(p_data.get("is_active", True))
-            )
-            session.add(product)
-        session.flush()
-
-        if sales_data:
-            today_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            seed_dates = [_parse_dt(s.get("date")) for s in sales_data if s.get("date")]
-            max_seed_date = max(seed_dates) if seed_dates else today_midnight
-            seed_shift = today_midnight - max_seed_date
-
-            for s_data in sales_data:
-                shifted_date = _parse_dt(s_data.get("date")) + seed_shift
-                sales_entry = SalesHistory(
-                    id=s_data.get("id"),
-                    product_id=s_data.get("product_id"),
-                    date=shifted_date,
-                    quantity_sold=int(s_data.get("quantity_sold", 10)),
-                    price_at_date=float(s_data.get("price_at_date", 100.0)),
-                    available_quantity=int(s_data.get("available_quantity", 50)),
-                    platform="api_vendas",
-                    collected_at=_parse_dt(s_data.get("collected_at"))
-                )
-                session.add(sales_entry)
-
-        session.commit()
+            except Exception as err:
+                logger.warning(f"[SeedLoader] Falha ao executar update_historical_data_to_nov30: {err}")
+        else:
+            logger.error("[SeedLoader] Nenhum catálogo oficial (historico_vendas.db nem data/catalog_500_products.json) encontrado.")
     except Exception as e:
         session.rollback()
         print(f"[SeedLoader] Erro ao sincronizar seed: {e}")
