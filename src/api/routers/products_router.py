@@ -21,6 +21,22 @@ from src.schemas.product_schema import (
 router = APIRouter(prefix="/products", tags=["Produtos & Histórico"])
 
 
+def _get_sales_cutoff(db: Session) -> tuple[datetime, str]:
+    """Retorna a data de corte real min(hoje_local, max_date_banco) como (datetime, YYYY-MM-DD)."""
+    row = db.query(
+        func.min(func.date(SalesHistory.date)),
+        func.max(func.date(SalesHistory.date)),
+    ).first()
+    today_dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    if not row or not row[1]:
+        return today_dt, today_dt.strftime("%Y-%m-%d")
+
+    db_min_dt = datetime.strptime(str(row[0])[:10], "%Y-%m-%d")
+    db_max_dt = datetime.strptime(str(row[1])[:10], "%Y-%m-%d")
+    cutoff_dt = min(today_dt, db_max_dt) if today_dt >= db_min_dt else db_max_dt
+    return cutoff_dt, cutoff_dt.strftime("%Y-%m-%d")
+
+
 @router.get("", response_model=ProductListResponse, summary="Listar produtos com busca e paginação")
 def list_products(
     page: int = Query(1, ge=1, description="Número da página"),
@@ -53,12 +69,13 @@ def list_products(
                     .limit(limit)\
                     .all()
 
+    _, cutoff_str = _get_sales_cutoff(db)
     items = []
     for prod in products:
         sales_agg = db.query(
             func.sum(SalesHistory.quantity_sold).label("total_units"),
             func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, prod.price or 0.0)).label("total_rev")
-        ).filter(SalesHistory.product_id == prod.id).first()
+        ).filter(SalesHistory.product_id == prod.id, func.date(SalesHistory.date) <= cutoff_str).first()
 
         total_units = int(sales_agg.total_units or 0)
         total_rev = float(sales_agg.total_rev or 0.0)
@@ -117,7 +134,7 @@ def get_top_sales(
     db: Session = Depends(get_db)
 ):
     """Calcula os produtos campeões de vendas no período (últimos 30 dias / mês)."""
-    latest_date = db.query(func.max(SalesHistory.date)).scalar()
+    cutoff_dt, cutoff_str = _get_sales_cutoff(db)
 
     query = db.query(
         SalesHistory.product_id,
@@ -127,11 +144,16 @@ def get_top_sales(
         func.sum(SalesHistory.quantity_sold).label("total_sold"),
         func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, Product.price, 0.0)).label("total_revenue")
     ).join(Product, Product.id == SalesHistory.product_id)\
-     .filter(Product.is_active.is_(True))
+     .filter(Product.is_active.is_(True), func.date(SalesHistory.date) <= cutoff_str)
 
-    if latest_date and days > 0:
-        start_date = latest_date - timedelta(days=days)
-        query = query.filter(SalesHistory.date >= start_date)
+    if days > 0:
+        start_dt = cutoff_dt - timedelta(days=days)
+        start_str = start_dt.strftime("%Y-%m-%d")
+        query = query.filter(
+            SalesHistory.date >= (start_dt - timedelta(days=1)),
+            SalesHistory.date <= (cutoff_dt + timedelta(days=1)),
+            func.date(SalesHistory.date) >= start_str,
+        )
 
     if category and category.strip().upper() not in ["GERAIS", "GERAL", "TODAS", "TODOS"]:
         query = query.filter(Product.category == category.strip())
@@ -273,8 +295,9 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
     if not prod:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produto não encontrado.")
 
+    _, cutoff_str = _get_sales_cutoff(db)
     sales = db.query(SalesHistory)\
-              .filter(SalesHistory.product_id == product_id)\
+              .filter(SalesHistory.product_id == product_id, func.date(SalesHistory.date) <= cutoff_str)\
               .order_by(SalesHistory.date.desc())\
               .limit(30)\
               .all()
@@ -330,8 +353,9 @@ def get_product_sales_history(
     if not prod:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produto não encontrado.")
 
+    _, cutoff_str = _get_sales_cutoff(db)
     sales = db.query(SalesHistory)\
-              .filter(SalesHistory.product_id == product_id)\
+              .filter(SalesHistory.product_id == product_id, func.date(SalesHistory.date) <= cutoff_str)\
               .order_by(SalesHistory.date.desc())\
               .limit(days)\
               .all()
@@ -382,12 +406,13 @@ def discover_live_products(
             detail=f"Produto '{query_str}' não encontrado no catálogo."
         )
 
+    _, cutoff_str = _get_sales_cutoff(db)
     items = []
     for prod in matched_prods:
         sales_agg = db.query(
             func.sum(SalesHistory.quantity_sold).label("total_units"),
             func.sum(SalesHistory.quantity_sold * func.coalesce(SalesHistory.price_at_date, prod.price or 0.0)).label("total_rev")
-        ).filter(SalesHistory.product_id == prod.id).first()
+        ).filter(SalesHistory.product_id == prod.id, func.date(SalesHistory.date) <= cutoff_str).first()
 
         total_units = int(sales_agg.total_units or 0)
         total_rev = float(sales_agg.total_rev or 0.0)

@@ -3,11 +3,8 @@
  * Centraliza requisições HTTP para a API REST FastAPI (/api/v1).
  */
 
-// Desativação global do sistema de notificações flutuantes (toasts)
-window.showToast = function() {};
-
 const API_BASE_URL = (() => {
-    if (window.TRENDCOMMERCE_API_URL) return window.TRENDCOMMERCE_API_URL;
+    if (window.TRENDCOMMERCE_API_URL) return window.TRENDCOMMERCE_API_URL.replace(/\/+$/, '');
     const customUrl = localStorage.getItem('trendecommerce_api_url');
     if (customUrl) return customUrl.replace(/\/+$/, '');
 
@@ -21,13 +18,8 @@ const API_BASE_URL = (() => {
         return 'http://localhost:8000/api/v1';
     }
 
-    // Em producao na nuvem (ex: Vercel): utiliza o backend ativo no Render
-    if (window.location.hostname.includes('vercel.app')) {
-        return 'https://trendecommerce.onrender.com/api/v1';
-    }
-
-    // Fallback padrao para producao
-    return 'https://trendecommerce.onrender.com/api/v1';
+    // Em produção (ex: Vercel): utiliza rota relativa /api/v1
+    return '/api/v1';
 })();
 
 class ApiService {
@@ -211,7 +203,7 @@ class ApiService {
     };
 
     // ==========================================
-    // Produtos & Histórico (API_Historico_Vendas)
+    // Produtos & Histórico
     // ==========================================
     products = {
         list: async (params = {}) => {
@@ -246,17 +238,6 @@ class ApiService {
 
         getHistory: async (id, days = 30) => {
             return await this.request(`/products/${id}/history?days=${days}`);
-        },
-
-        getApiStatus: async () => {
-            return await this.request('/products/api-status');
-        },
-
-        syncCategories: async (limitPorCat = 10) => {
-            return await this.request('/products/sync-categories', {
-                method: 'POST',
-                body: JSON.stringify({ limit_por_cat: limitPorCat })
-            });
         }
     };
 
@@ -288,6 +269,10 @@ class ApiService {
                     horizon_days: parseInt(horizonDays)
                 })
             });
+        },
+
+        timeline: async (productId, historyRange = '6m', horizonDays = 14) => {
+            return await this.request(`/forecast/timeline/${parseInt(productId)}?history_range=${encodeURIComponent(historyRange)}&horizon_days=${parseInt(horizonDays)}`);
         }
     };
 }

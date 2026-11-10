@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrendCommerce AI - IA Preditiva</title>
+    <title>TrendEcommerce AI - IA Preditiva</title>
     <link rel="icon" type="image/png" href="assets/logo.png?v=2">
     
     <!-- Google Fonts -->
@@ -16,7 +16,6 @@
 
     <!-- CSS Stylesheets -->
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/login.css">
 </head>
 <body class="dashboard-mode">
     <div id="appRoot" class="app-root dashboard-view">
@@ -88,13 +87,55 @@
                     <div class="dash-card main-chart-card">
                         <div class="chart-main-area-col" style="display: flex; flex-direction: column; width: 100%; min-width: 0;">
                             
+                            <div class="specific-card-header" style="margin-bottom: 12px;">
+                                <h2 id="iaCardProdTitle" class="specific-prod-title">CARREGANDO PRODUTO...</h2>
+                                <div id="iaCardProdPrice" class="specific-prod-price">PREÇO: R$ --</div>
+                            </div>
+
+                            <!-- Barra de Controles da Linha do Tempo Híbrida -->
+                            <div class="timeline-controls-bar" style="margin-bottom: 14px; padding: 8px 14px;">
+                                <div class="timeline-control-group">
+                                    <span class="timeline-control-label">Histórico Passado:</span>
+                                    <div class="timeline-btn-group">
+                                        <button type="button" class="timeline-btn history-range-btn" data-range="1m">1 MÊS</button>
+                                        <button type="button" class="timeline-btn history-range-btn active" data-range="6m">6 MESES</button>
+                                        <button type="button" class="timeline-btn history-range-btn" data-range="1y">1 ANO</button>
+                                        <button type="button" class="timeline-btn history-range-btn" data-range="5y">5 ANOS</button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Canvas 2D Nativo do Gráfico de Vendas -->
                             <div class="chart-container-wrap">
                                 <canvas id="mainSalesChartCanvas"></canvas>
-                                <div id="iaChartTooltip" class="chart-tooltip-bubble" style="display: none;">
-                                    <div class="tooltip-title">PRODUTO</div>
-                                    <div class="tooltip-price">R$ 0,00</div>
-                                    <div class="tooltip-sold">0 VENDIDOS</div>
+                                <div id="iaChartTooltip" class="chart-tooltip-box chart-tooltip-bubble" style="display: none;"></div>
+                            </div>
+
+                            <!-- Grid de KPIs (Histórico + Projeção) -->
+                            <div class="kpi-grid kpi-grid-6col" style="margin-top: 14px;">
+                                <div class="kpi-box">
+                                    <span class="kpi-title">MÉDIA HISTÓRICA DIÁRIA</span>
+                                    <span id="kpiHistoricalAvg" class="kpi-val text-cyan">-- un/dia</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">PICO HISTÓRICO MÁXIMO</span>
+                                    <span id="kpiHistoricalPeak" class="kpi-val text-amber">-- un</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">DEMANDA TOTAL PROJETADA</span>
+                                    <span id="kpiForecastTotal" class="kpi-val text-cyan">-- un</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">FATURAMENTO ESTIMADO</span>
+                                    <span id="kpiForecastRevenue" class="kpi-val text-emerald">R$ --</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">MÉDIA DIÁRIA PROJETADA</span>
+                                    <span id="kpiForecastDailyAvg" class="kpi-val text-cyan">-- un/dia</span>
+                                </div>
+                                <div class="kpi-box">
+                                    <span class="kpi-title">ESTOQUE DE SEGURANÇA</span>
+                                    <span id="kpiForecastSafetyStock" class="kpi-val text-emerald">-- un</span>
                                 </div>
                             </div>
                         </div>
@@ -112,10 +153,10 @@
                                         </svg>
                                     </button>
                                     <div id="menuIaFilterDate" class="dates-dropdown-menu" style="display: none;">
-                                        <button type="button" class="dropdown-menu-item active" data-days="7">
+                                        <button type="button" class="dropdown-menu-item" data-days="7">
                                             PRÓXIMOS 7 DIAS
                                         </button>
-                                        <button type="button" class="dropdown-menu-item" data-days="14">
+                                        <button type="button" class="dropdown-menu-item active" data-days="14">
                                             PRÓXIMOS 14 DIAS
                                         </button>
                                         <button type="button" class="dropdown-menu-item" data-days="30">
@@ -170,6 +211,6 @@
     <script src="js/api.js"></script>
     <script src="js/effects.js"></script>
     <script src="js/sidebar.js"></script>
-    <script src="js/ia-preditiva.js"></script>
+    <script src="js/ia-preditiva.js?v=2.7"></script>
 </body>
 </html>

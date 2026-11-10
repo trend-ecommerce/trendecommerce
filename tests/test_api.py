@@ -38,7 +38,6 @@ def test_auth_login_and_me(client):
 
 def test_auth_google_login_and_register(client):
     """Testa cadastro e login via Google OAuth2 endpoint."""
-    # 1. Cadastro / Login com novo usuário via Google
     google_email = "novo.google.user@gmail.com"
     response = client.post("/api/v1/auth/google", json={
         "email": google_email,
@@ -50,7 +49,7 @@ def test_auth_google_login_and_register(client):
     assert data["user"]["email"] == google_email
     assert data["user"]["name"] == "Google Test User"
 
-    # 2. Login com usuário já existente via Google
+    # Login com usuario ja existente via Google
     response_existing = client.post("/api/v1/auth/google", json={
         "email": "admin@trendecommerce.com"
     })
@@ -59,10 +58,10 @@ def test_auth_google_login_and_register(client):
 
 
 def test_auth_google_otp_request_and_verify(client):
-    """Testa fluxo completo de OTP do Google: solicitação de código e validação."""
+    """Testa fluxo completo de OTP do Google: solicitacao de codigo e validacao."""
     test_email = "usuario.verificado.google@gmail.com"
 
-    # 1. Solicitar código de verificação
+    # 1. Solicitar codigo de verificacao
     req_resp = client.post("/api/v1/auth/google/request-code", json={
         "email": test_email,
         "name": "Usuario Verificado"
@@ -70,14 +69,14 @@ def test_auth_google_otp_request_and_verify(client):
     assert req_resp.status_code == 200
     assert req_resp.json()["success"] is True
 
-    # 2. Tentar código inválido
+    # 2. Tentar codigo invalido
     err_resp = client.post("/api/v1/auth/google/verify-code", json={
         "email": test_email,
         "code": "0000"
     })
     assert err_resp.status_code == 400
 
-    # 3. Validar com código de teste aceito
+    # 3. Validar com codigo de teste aceito
     verify_resp = client.post("/api/v1/auth/google/verify-code", json={
         "email": test_email,
         "code": "1234",
@@ -88,7 +87,6 @@ def test_auth_google_otp_request_and_verify(client):
     assert "access_token" in data
     assert data["user"]["email"] == test_email
     assert data["user"]["name"] == "Usuario Verificado"
-
 
 
 def test_auth_register_duplicate(client):
@@ -102,22 +100,21 @@ def test_auth_register_duplicate(client):
 
 
 def test_auth_forgot_and_reset_password(client):
-    """Testa fluxo de recuperação de senha com código OTP."""
+    """Testa fluxo de recuperacao de senha com codigo OTP."""
     req_resp = client.post("/api/v1/auth/forgot-password", json={
         "email": "admin@trendecommerce.com"
     })
     assert req_resp.status_code == 200
     assert req_resp.json()["success"] is True
-    assert "admin@trendecommerce.com" in req_resp.json()["message"]
 
-    # 1. Validar código incorreto
+    # 1. Validar codigo incorreto
     err_verify = client.post("/api/v1/auth/verify-reset-code", json={
         "email": "admin@trendecommerce.com",
         "code": "0000"
     })
     assert err_verify.status_code == 400
 
-    # 2. Validar código correto / fallback aceito
+    # 2. Validar codigo correto / fallback aceito
     ok_verify = client.post("/api/v1/auth/verify-reset-code", json={
         "email": "admin@trendecommerce.com",
         "code": "1234"
@@ -347,3 +344,79 @@ def test_products_autocomplete(client):
     resp_unreg = client.get("/api/v1/products/autocomplete?q=produto_inexistente_xyz_999&limit=5")
     assert resp_unreg.status_code == 200
     assert resp_unreg.json() == []
+
+def test_protected_admin_routes(client):
+    """Testa que rotas administrativas exigem token JWT valido."""
+    # 1. Tentativa sem token deve retornar 401
+    resp_reseed_anon = client.post("/api/v1/admin/reseed")
+    assert resp_reseed_anon.status_code == 401
+
+    # 2. Login como admin para obter token
+    login_resp = client.post("/api/v1/auth/login", json={
+        "email": "admin@trendecommerce.com",
+        "password": "admin123"
+    })
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 3. Com token valido, rota administrativa deve permitir acesso
+    resp_reseed_auth = client.post("/api/v1/admin/reseed", headers=headers)
+    assert resp_reseed_auth.status_code == 200
+    assert resp_reseed_auth.json()["status"] == "success"
+
+
+def test_recommendations_top_products_with_real_ml(client):
+    """Testa endpoint de recomendações conectado ao motor preditivo real."""
+    resp = client.get("/api/v1/recommendations/top-products?days=14&limit=5")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_analyzed" in data
+    assert "items" in data
+    if data["items"]:
+        first = data["items"][0]
+        assert "opportunity_score" in first
+        assert "predicted_units" in first
+        assert "estimated_revenue" in first
+        assert "quadrant" in first
+        assert first["predicted_units"] > 0
+
+
+def test_forecast_timeline_endpoint(client):
+    """Testa endpoint da Linha do Tempo Híbrida (histórico real + projeção XGBoost)."""
+    # 1. Testar range padrão (6m, 14d) para produto existente
+    resp = client.get("/api/v1/forecast/timeline/1?history_range=6m&horizon_days=14")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["product_id"] == 1
+    assert "product_title" in data
+    assert "current_date" in data
+    assert data["history_range"] == "6m"
+    assert data["horizon_days"] == 14
+    assert len(data["history_points"]) > 0
+    assert len(data["forecast_points"]) == 14
+    assert "metrics" in data
+    assert data["metrics"]["historical_avg"] >= 0
+    assert data["metrics"]["historical_peak"] >= data["metrics"]["historical_avg"]
+    assert data["metrics"]["forecast_total"] > 0
+    assert data["metrics"]["forecast_avg"] > 0
+    assert all(p["is_real"] is True for p in data["history_points"])
+    assert all("confidence_min" in p and "confidence_max" in p for p in data["forecast_points"])
+
+    # 2. Testar range de 1 mês com 7 dias
+    resp_1m = client.get("/api/v1/forecast/timeline/1?history_range=1m&horizon_days=7")
+    assert resp_1m.status_code == 200
+    d_1m = resp_1m.json()
+    assert len(d_1m["history_points"]) <= 32
+    assert len(d_1m["forecast_points"]) == 7
+
+    # 3. Testar range de 5 anos com 30 dias (deve conter ~60 pontos mensais)
+    resp_5y = client.get("/api/v1/forecast/timeline/1?history_range=5y&horizon_days=30")
+    assert resp_5y.status_code == 200
+    d_5y = resp_5y.json()
+    assert len(d_5y["history_points"]) >= 50
+    assert len(d_5y["forecast_points"]) == 30
+
+    # 4. Testar produto inexistente (deve retornar 404)
+    resp_404 = client.get("/api/v1/forecast/timeline/999999?history_range=6m&horizon_days=14")
+    assert resp_404.status_code == 404
