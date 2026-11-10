@@ -183,6 +183,13 @@ class ApiService {
             });
         },
 
+        verifyResetCode: async (email, code) => {
+            return await this.request('/auth/verify-reset-code', {
+                method: 'POST',
+                body: JSON.stringify({ email, code })
+            });
+        },
+
         resetPassword: async (email, code, new_password) => {
             return await this.request('/auth/reset-password', {
                 method: 'POST',
@@ -266,15 +273,6 @@ class ApiService {
 
         timeline: async (productId, historyRange = '6m', horizonDays = 14) => {
             return await this.request(`/forecast/timeline/${parseInt(productId)}?history_range=${encodeURIComponent(historyRange)}&horizon_days=${parseInt(horizonDays)}`);
-        }
-    };
-
-    // ==========================================
-    // Tendências
-    // ==========================================
-    trends = {
-        search: async (keyword = '') => {
-            return await this.request(`/trends/search?keyword=${encodeURIComponent(keyword)}`);
         }
     };
 }

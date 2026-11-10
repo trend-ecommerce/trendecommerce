@@ -2,12 +2,10 @@ import os
 from datetime import datetime, timedelta
 from typing import Generator, Optional
 from pathlib import Path
-import pandas as pd
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from src.database.connection import DatabaseManager
@@ -22,7 +20,6 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "trendecommerce-secret-key-development-
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 horas
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security_bearer = HTTPBearer(auto_error=False)
 
 # Singleton do DatabaseManager e do FutureForecaster
@@ -101,23 +98,6 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
-
-
-def get_optional_current_user(
-    auth: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
-    db: Session = Depends(get_db)
-) -> Optional[User]:
-    """Retorna o usuário se o token for fornecido e válido, ou None."""
-    if not auth or not auth.credentials:
-        return None
-    try:
-        payload = jwt.decode(auth.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if not email:
-            return None
-        return db.query(User).filter(User.email == email).first()
-    except Exception:
-        return None
 
 
 # ==========================================

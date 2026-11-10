@@ -1,5 +1,4 @@
 """Módulo de Serviços do TrendEcommerce AI."""
-from .forecast_service import ForecastService
-from .recommendation_service import RecommendationService
+from .vendas_api_client import VendasApiClient, vendas_client
 
-__all__ = ["ForecastService", "RecommendationService"]
+__all__ = ["VendasApiClient", "vendas_client"]
