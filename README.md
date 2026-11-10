@@ -1,8 +1,8 @@
 <div align="center">
 
-  <img src="frontend/img/banner.png" alt="TrendCommerce AI Logo" width="750" style="max-width: 100%; height: auto; border-radius: 8px; margin-bottom: 20px;" />
+  <img src="frontend/img/banner.png" alt="TrendEcommerce AI Logo" width="750" style="max-width: 100%; height: auto; border-radius: 8px; margin-bottom: 20px;" />
 
-  # 🚀 TrendCommerce AI
+  # 🚀 TrendEcommerce AI
 
   <p><strong>Plataforma Fullstack de Inteligência Preditiva de Demanda, Gestão de Catálogo e Análise Estratégica de Vendas para E-commerce</strong></p>
 
@@ -11,7 +11,7 @@
     <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI" /></a>
     <a href="https://xgboost.readthedocs.io/"><img src="https://img.shields.io/badge/XGBoost-2.0+-eb6024.svg" alt="XGBoost" /></a>
     <a href="https://www.sqlalchemy.org/"><img src="https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg" alt="SQLAlchemy" /></a>
-    <a href="tests/"><img src="https://img.shields.io/badge/Tests-29%20passed%20%7C%20100%25-brightgreen.svg" alt="Tests" /></a>
+    <a href="tests/"><img src="https://img.shields.io/badge/Tests-50%20passed%20%7C%20100%25-brightgreen.svg" alt="Tests" /></a>
   </p>
 
   <p>
@@ -32,12 +32,12 @@
 
 ## 📌 Visão Geral
 
-O **TrendCommerce AI** é uma plataforma web fullstack voltada à previsão de demanda e inteligência comercial para e-commerce. O sistema conecta-se à **API de Histórico de Vendas** (composta por **500 produtos** distribuídos em **5 categorias** e **518.500 registros históricos diários**), combinando **engenharia de features temporais e estatísticas** com **Machine Learning (XGBoost)** para oferecer:
+O **TrendEcommerce AI** é uma plataforma web fullstack voltada à previsão de demanda e inteligência comercial para e-commerce. O sistema conecta-se à **API de Histórico de Vendas** (composta por **500 produtos** distribuídos em **5 categorias** e **1.253.000 registros históricos diários**), combinando **engenharia de features temporais e estatísticas** com **Machine Learning (XGBoost)** para oferecer:
 
-- **Projeções de demanda futura** para horizontes de **7, 14 e 30 dias**, com intervalos de confiança (`confidence_min` / `confidence_max`), estimativa de faturamento e cálculo de estoque de segurança recomendado.
-- **Explicabilidade de Inteligência Artificial (XAI)** detalhando o peso percentual e o impacto de cada fator determinante da previsão (*Média Recente*, *Sazonalidade Semanal*, *Competitividade* e *Tendência de Mercado*).
+- **Projeções de demanda futura e Linha do Tempo Híbrida** para horizontes de **7, 14 e 30 dias** combinados a janelas históricas de **1 mês, 6 meses, 1 ano e 5 anos**, com intervalos de confiança (`confidence_min` / `confidence_max`), estimativa de faturamento e cálculo de estoque de segurança recomendado.
+- **Explicabilidade de Inteligência Artificial (XAI)** calculada dinamicamente a partir do *gain* real das árvores do XGBoost, detalhando o peso percentual e o impacto de cada fator determinante da previsão (*Média Recente*, *Tendência de Mercado*, *Sazonalidade Semanal* e *Competitividade*).
 - **Busca Inteligente com Similaridade de Caracteres (Fuzzy Search)** no catálogo oficial, sugerindo produtos cadastrados mesmo quando o usuário digita termos com erros de grafia e informando claramente quando um produto não existe no catálogo.
-- **Rankings Preditivos** (*Top 7 Geral* e *Top 5 por Categoria*), **Matriz de Oportunidades Comerciais (POI)** e **Exportação Executiva de Relatórios em `.CSV` (Excel)**.
+- **Rankings Preditivos orientados pelo Índice de Tração Preditiva (PTI)** (*Top 7 Geral* com equilíbrio setorial e *Top 5 por Categoria*), **Matriz de Oportunidades Comerciais (POI)** e **Exportação Executiva de Relatórios em `.CSV` (Excel)**.
 - **Autenticação Completa e Segura** com JWT, integração com **Supabase Auth**, **Google Identity Services (OAuth / OTP)** e envio de códigos de verificação por e-mail via **SMTP Gmail**.
 
 ---
@@ -45,23 +45,25 @@ O **TrendCommerce AI** é uma plataforma web fullstack voltada à previsão de d
 ## ⚡ Funcionalidades Chave
 
 ### 🧠 1. Motor Preditivo de Machine Learning (`src/ml/`)
-- **Previsões para 7, 14 e 30 Dias (`FutureForecaster`)**: Projeção diária de demanda e receita para qualquer produto do catálogo, com pré-aquecimento (*warmup*) automático do modelo no startup do servidor e cache em memória para respostas instantâneas.
-- **Intervalos de Confiança e Estoque Recomendado (`DemandPredictor`)**: Cálculo de limites inferior e superior (±12%) e recomendação automática de buffer de estoque.
-- **Explicabilidade da IA (XAI)**: Decomposição transparente de cada previsão em 4 pilares com pesos percentuais:
-  1. *Média Recente (40%)*: Base orientada pelas vendas dos últimos 14 dias.
-  2. *Sazonalidade Semanal (30%)*: Variação cíclica ao longo dos dias da semana e finais de semana.
-  3. *Competitividade (15%)*: Posicionamento e estabilidade do preço unitário.
-  4. *Tendência de Mercado (15%)*: Tração e estabilidade da categoria do produto.
+- **Previsões para 7, 14 e 30 Dias e Linha do Tempo Híbrida (`FutureForecaster`)**: Projeção diária autoregressiva de demanda e receita para qualquer produto do catálogo, com carregamento otimizado do artefato pré-treinado (`models/xgboost_demand_v1.json`, `<80MB RAM`) no startup do servidor e cache em memória para respostas instantâneas (`<30ms`).
+- **Pipeline de Treinamento de Baixa Memória (`train_pipeline.py`)**: Treinamento do `XGBRegressor` (100 árvores, `max_depth=5`, `learning_rate=0.08`, `R² ≈ 0.986` em teste) sobre os 1,25M de registros históricos com *downcasting* numérico (`float32`).
+- **Intervalos de Confiança e Estoque Recomendado (`DemandPredictor`)**: Cálculo dinâmico de limites inferior e superior e recomendação automática de buffer de estoque.
+- **Explicabilidade Dinâmica da IA (XAI)**: Decomposição transparente de cada previsão em 4 pilares calculados a partir da importância real (`gain`) das features do modelo XGBoost:
+  1. *Média Recente (~52%)*: Base orientada pelos volumes e médias móveis de 7 e 30 dias.
+  2. *Tendência de Mercado (~42%)*: Taxa de variação percentual e aceleração de curto prazo da demanda.
+  3. *Sazonalidade Semanal (~3%)*: Variação cíclica por dia da semana, mês e padrão de compra.
+  4. *Competitividade (~3%)*: Posicionamento e variação do preço unitário frente ao histórico.
 - **Comparador Preditivo Lado a Lado (`/api/v1/forecast/compare`)**: Confronto direto entre dois produtos (`product_id_a` vs. `product_id_b`), apontando o líder em volume de vendas, o líder em faturamento e um veredito estratégico automático.
-- **Auditoria e Recomendações (`DemandComparator` & `OpportunityRecommender`)**: Validação histórica (*backtesting* Real vs. Previsto com `RMSE`, `MAE` e taxa de acerto) e classificação de produtos em quadrantes estratégicos (`OPORTUNIDADE_EXPLOSIVA`, `ALTA_RENTABILIDADE`, `DEMANDA_MODERADA`, `BAIXA_PRIORIDADE`).
+- **Auditoria e Recomendações (`DemandComparator` & `OpportunityRecommender`)**: Validação histórica (*backtesting* Real vs. Previsto com `RMSE`, `MAE`, `MAPE` e `R²`) e classificação de produtos em quadrantes estratégicos (`OPORTUNIDADE_EXPLOSIVA`, `ALTA_RENTABILIDADE`, `DEMANDA_MODERADA`, `BAIXA_PRIORIDADE`).
 
 ### 📦 2. Integração com a API de Histórico de Vendas (`VendasApiClient`)
-- **Catálogo Oficial**: 500 produtos ativos em 5 categorias (*Eletrônicos*, *Moda e acessórios*, *Casa e decoração*, *Esportes e fitness*, *Beleza e cuidados pessoais*) e 518.500 registros de vendas históricas.
+- **Catálogo Oficial**: 500 produtos ativos em 5 categorias (*Eletrônicos*, *Moda e acessórios*, *Casa e decoração*, *Esportes e fitness*, *Beleza e cuidados pessoais*) e 1.253.000 registros de vendas históricas (2020 a 2026).
 - **Duplo Canal de Operação (HTTP + SQLite `ATTACH DATABASE`)**: Consome a API externa em `http://127.0.0.1:8001` e realiza sincronização em lote de alta velocidade diretamente a partir do arquivo `historico_vendas.db` caso o servidor externo não esteja em execução.
 - **Auto-Seed no Startup (`seed_loader.py`)**: Ao iniciar a aplicação, o sistema verifica automaticamente se o banco local (`data/trendcommerce_dev.db`) está vazio ou desatualizado e sincroniza todos os produtos e séries temporais da API oficial.
 - **Busca por Similaridade de Caracteres (`search_catalog_products`)**: Utiliza normalização Unicode e `difflib.SequenceMatcher` para recomendar produtos cadastrados com grafia parecida (ex.: `notbook` → *Notebook*, `cretina` → *Creatina*) e bloqueia termos inválidos/inexistentes com mensagem clara de produto não encontrado.
 
 ### 🔬 3. Engenharia de Features (`FeatureEngineer`)
+- **Sanitização Determinística de Séries (`sanitize_sales_series`)**: Tratamento automático de quedas bruscas/zeros espúrios e picos isolados preservando a sazonalidade real entre janelas de `1m`, `6m`, `1y` e `5y`.
 - **Features de Vendas e Preço (`create_sales_features`)**:
   - Somas e médias móveis de 7 e 30 dias (`vendas_7_dias`, `vendas_30_dias`, `media_vendas_7_dias`, `media_vendas_30_dias`).
   - Taxas de crescimento (`crescimento_vendas`, `crescimento_vendas_7d`).
@@ -71,11 +73,11 @@ O **TrendCommerce AI** é uma plataforma web fullstack voltada à previsão de d
   - Transformações trigonométricas cíclicas (`dia_semana_sin`, `dia_semana_cos`, `mes_sin`, `mes_cos`).
 
 ### 💻 4. Frontend Web Multi-Páginas (`frontend/`)
-Interface construída em **HTML5**, **CSS3 (Glassmorphism)** e **Vanilla JavaScript**, servida diretamente pelo FastAPI em `/app`:
-- **IA Preditiva (`ia-preditiva.html` / `ia-preditiva.js`)**: Painel principal com gráfico interativo em Canvas para projeções de **7, 14 e 30 dias**, filtro por categoria, **Top 5 Produtos Mais Vendidos no Mês** e modal de **Exportação Executiva para Excel (`.CSV`)**.
-- **Ranking de Produtos (`ranking.html` / `ranking.js`)**: Exibição do **Top 7 Produtos no Geral** e **Top 5 por Categoria** para os próximos 30 dias, com **Modal de Explicabilidade (XAI)** ao clicar em qualquer item do ranking.
+Interface construída em **HTML5**, **CSS3 (Glassmorphism / Cyberpunk UI)** e **Vanilla JavaScript**, servida diretamente pelo FastAPI em `/app`:
+- **IA Preditiva (`ia-preditiva.html` / `ia-preditiva.js`)**: Painel principal com gráfico interativo em Canvas para Linha do Tempo Híbrida (histórico passado de **1m, 6m, 1y, 5y** + projeções futuras de **7, 14 e 30 dias**), filtro por categoria, **Top 5 Produtos Mais Vendidos no Mês** e modal de **Exportação Executiva para Excel (`.CSV`)**.
+- **Ranking de Produtos (`ranking.html` / `ranking.js`)**: Exibição do **Top 7 Produtos no Geral** e **Top 5 por Categoria** para os próximos 30 dias baseados no **Índice de Tração Preditiva (PTI)**, com **Modal de Explicabilidade (XAI)** ao clicar em qualquer item do ranking.
 - **Análise Específica (`analise-especifica.html` / `analise-especifica.js`)**: Busca inteligente com autocomplete e tolerância a erros de digitação, cards de KPIs preditivos (Unidades Previstas, Faturamento Projetado, Média Diária e Estoque de Segurança), gráfico diário interativo e **Painel XAI completo** com os 4 fatores determinantes.
-- **Autenticação Completa (`login.html`, `cadastro.html`, `recuperar-senha.html`, `codigo-verificacao.html`, `nova-senha.html`)**: Fluxo de login tradicional, login com Google, confirmação de e-mail no cadastro e redefinição de senha via código OTP.
+- **Autenticação Completa (`login.html`, `cadastro.html`, `recuperar-senha.html` / `recuperarsenha.html`, `codigo-verificacao.html` / `codigosenha.html`, `nova-senha.html` / `novasenha.html`)**: Fluxo de login tradicional, login com Google, confirmação de e-mail e redefinição de senha via código OTP.
 
 ---
 
@@ -84,7 +86,7 @@ Interface construída em **HTML5**, **CSS3 (Glassmorphism)** e **Vanilla JavaScr
 ```text
                     ┌───────────────────────────────────────────────┐
                     │          API de Histórico de Vendas           │
-                    │  (500 Produtos | 5 Categorias | 518.5k Vendas)│
+                    │  (500 Produtos | 5 Categorias | 1.25M Vendas) │
                     └───────────────────────┬───────────────────────┘
                                             │
                                             ▼
@@ -104,9 +106,9 @@ Interface construída em **HTML5**, **CSS3 (Glassmorphism)** e **Vanilla JavaScr
                                             ▼
                     ┌───────────────────────────────────────────────┐
                     │      FeatureEngineer & Núcleo ML (XGBoost)    │
-                    │  - Features de Vendas (7d/30d) e Temporais    │
+                    │  - 23 Features de Vendas (7d/30d) e Temporais │
                     │  - DemandTrainer, DemandPredictor & Comparator│
-                    │  - FutureForecaster (7/14/30d + Motor XAI)    │
+                    │  - FutureForecaster (7/14/30d + XAI Dinâmico) │
                     │  - OpportunityRecommender (Matriz POI)        │
                     └───────────────────────┬───────────────────────┘
                                             │
@@ -115,15 +117,15 @@ Interface construída em **HTML5**, **CSS3 (Glassmorphism)** e **Vanilla JavaScr
                     │           API REST FastAPI (/api/v1)          │
                     │  - /auth (JWT, Google OAuth, Supabase, OTP)   │
                     │  - /products (Catálogo, Top Sales, Fuzzy)     │
-                    │  - /forecast (Predict, Summary, Ranking, Comp)│
+                    │  - /forecast (Predict, Timeline, Ranking, Cmp)│
                     │  - /recommendations (Top Products POI)        │
                     └───────────────────────┬───────────────────────┘
                                             │
                                             ▼
                     ┌───────────────────────────────────────────────┐
                     │       Frontend Web (HTML5 / CSS3 / JS)        │
-                    │  - IA Preditiva (+ Exportação CSV)            │
-                    │  - Ranking 30d (+ Modal XAI)                  │
+                    │  - IA Preditiva (Timeline Híbrida + CSV)      │
+                    │  - Ranking 30d (PTI + Modal XAI)              │
                     │  - Análise Específica (Busca Fuzzy + XAI)     │
                     └───────────────────────────────────────────────┘
 ```
@@ -135,81 +137,93 @@ Interface construída em **HTML5**, **CSS3 (Glassmorphism)** e **Vanilla JavaScr
 ```text
 trendecommerce/
 ├── config/
-│   └── settings.py                  # Configurações globais (Pydantic Settings)
+│   └── settings.py                        # Configurações globais (Pydantic Settings)
 ├── data/
-│   └── trendcommerce_dev.db         # Banco de dados SQLite local (gerado automaticamente)
-├── frontend/                        # Aplicação Web Frontend (HTML5, CSS3 e Vanilla JS)
-│   ├── assets/                      # Imagens de fundo e logotipos
-│   ├── img/                         # Banner do projeto
+│   └── trendcommerce_dev.db               # Banco de dados SQLite local (gerado automaticamente)
+├── frontend/                              # Aplicação Web Frontend (HTML5, CSS3 e Vanilla JS)
+│   ├── assets/                            # Imagens de fundo (bg-logins.png) e logotipo (logo.png)
+│   ├── img/
+│   │   └── banner.png                     # Banner oficial do TrendEcommerce AI
 │   ├── css/
-│   │   ├── login.css                # Estilos das páginas de autenticação
-│   │   └── style.css                # Estilos do dashboard, modais e componentes
+│   │   ├── login.css                      # Estilos das páginas de autenticação
+│   │   └── style.css                      # Estilos do dashboard, modais e componentes
 │   ├── js/
-│   │   ├── analise-especifica.js    # Busca inteligente no catálogo, KPIs, gráfico e painel XAI
-│   │   ├── api.js                   # Cliente HTTP centralizado para consumo de /api/v1
-│   │   ├── auth.js                  # Autenticação JWT, Google OAuth, OTP e validação de sessão
-│   │   ├── effects.js               # Efeitos visuais de interface
-│   │   ├── ia-preditiva.js          # Gráfico preditivo (7/14/30d), Top 5 do mês e exportação CSV
-│   │   ├── ranking.js               # Top 7 geral, Top 5 por categoria e modal XAI
-│   │   └── sidebar.js               # Barra de navegação lateral e controle de usuário
-│   ├── analise-especifica.html      # Página de Análise Específica por Produto
-│   ├── cadastro.html                # Página de Cadastro de Usuário
-│   ├── codigo-verificacao.html      # Página de Confirmação de Código OTP
-│   ├── ia-preditiva.html            # Página Principal (IA Preditiva & Relatório Executivo)
-│   ├── index.html                   # Ponto de entrada do Frontend
-│   ├── login.html                   # Página de Login
-│   ├── nova-senha.html              # Página de Redefinição de Senha
-│   ├── ranking.html                 # Página de Ranking Preditivo de Produtos
-│   ├── recuperar-senha.html         # Página de Solicitação de Recuperação de Senha
-│   └── server.py                    # Servidor HTTP auxiliar opcional para o frontend (Porta 3000)
+│   │   ├── analise-especifica.js          # Busca inteligente no catálogo, KPIs, gráfico e painel XAI
+│   │   ├── api.js                         # Cliente HTTP centralizado para consumo de /api/v1
+│   │   ├── auth.js                        # Autenticação JWT, Google OAuth, OTP e validação de sessão
+│   │   ├── effects.js                     # Efeitos visuais de interface
+│   │   ├── ia-preditiva.js                # Linha do tempo híbrida (1m..5y + 7/14/30d), Top 5 e exportação CSV
+│   │   ├── ranking.js                     # Top 7 geral, Top 5 por categoria e modal XAI
+│   │   └── sidebar.js                     # Barra de navegação lateral e controle de usuário
+│   ├── analise-especifica.html            # Página de Análise Específica por Produto
+│   ├── cadastro.html                      # Página de Cadastro de Usuário
+│   ├── codigo-verificacao.html            # Página de Confirmação de Código OTP
+│   ├── codigosenha.html                   # Etapa de código OTP na recuperação de senha
+│   ├── ia-preditiva.html                  # Página Principal (IA Preditiva & Relatório Executivo)
+│   ├── index.html                         # Ponto de entrada do Frontend
+│   ├── login.html                         # Página de Login
+│   ├── nova-senha.html / novasenha.html   # Página de Redefinição de Senha
+│   ├── ranking.html                       # Página de Ranking Preditivo de Produtos
+│   ├── recuperar-senha.html / recuperarsenha.html # Solicitação de Recuperação de Senha
+│   ├── script.js                          # Controlador de fluxos de autenticação das telas de login
+│   └── server.py                          # Servidor HTTP auxiliar opcional para o frontend
+├── models/                                # Artefatos pré-treinados do modelo XGBoost
+│   ├── features_metadata.json             # Metadados das 23 features, hiperparâmetros e métricas (R² 0.986)
+│   └── xgboost_demand_v1.json             # Modelo XGBRegressor serializado para inferência rápida (<80MB RAM)
+├── scripts/
+│   └── update_historical_data_to_nov30.py # Script de recalibração sazonal e sincronização histórica (2020-2026)
 ├── src/
-│   ├── api/                         # Aplicação FastAPI e Rotas REST
+│   ├── api/                               # Aplicação FastAPI e Rotas REST
 │   │   ├── routers/
-│   │   │   ├── auth_router.py       # Login, Cadastro, Google OAuth, Verificação de E-mail e OTP
-│   │   │   ├── forecast_router.py   # Previsões XGBoost, Resumo Executivo, Ranking e Comparador
-│   │   │   ├── opportunity_router.py# Recomendações de produtos e Matriz de Oportunidades (POI)
-│   │   │   └── products_router.py   # Catálogo, Top Vendas, Autocomplete Fuzzy e Sincronização
+│   │   │   ├── auth_router.py             # Login, Cadastro, Google OAuth, Verificação de E-mail e OTP
+│   │   │   ├── forecast_router.py         # Previsões XGBoost, Timeline Híbrida, Resumo, Ranking e Comparador
+│   │   │   ├── opportunity_router.py      # Recomendações de produtos e Matriz de Oportunidades (POI)
+│   │   │   └── products_router.py         # Catálogo, Top Vendas, Autocomplete Fuzzy e Sincronização
 │   │   ├── services/
-│   │   │   ├── email_service.py     # Envio de e-mails transacionais e códigos OTP via SMTP
-│   │   │   └── supabase_service.py  # Sincronização e validação de usuários com Supabase Auth
-│   │   ├── dependencies.py          # Sessão de banco, segurança JWT/Bcrypt e warmup do XGBoost
-│   │   └── main.py                  # Configuração do FastAPI, CORS, lifespan e montagem do /app
-│   ├── database/                    # Persistência e ORM (SQLAlchemy)
-│   │   ├── connection.py            # Gerenciador de conexões e sessões (SQLite / PostgreSQL)
-│   │   ├── models.py                # Modelos ORM: User, Product e SalesHistory
-│   │   ├── seed_loader.py           # Auto-sincronização inicial com a API de Vendas
-│   │   └── setup.py                 # CLI de gerenciamento do banco (create, drop, seed, sync, status, reset)
+│   │   │   ├── email_service.py           # Envio de e-mails transacionais e códigos OTP via SMTP
+│   │   │   └── supabase_service.py        # Sincronização e validação de usuários com Supabase Auth
+│   │   ├── dependencies.py                # Sessão de banco, segurança JWT/Bcrypt e warmup do XGBoost
+│   │   └── main.py                        # Configuração do FastAPI, CORS, lifespan e montagem do /app
+│   ├── database/                          # Persistência e ORM (SQLAlchemy)
+│   │   ├── connection.py                  # Gerenciador de conexões e sessões (SQLite / PostgreSQL)
+│   │   ├── models.py                      # Modelos ORM: User, Product e SalesHistory
+│   │   ├── seed_loader.py                 # Auto-sincronização inicial com a API de Vendas
+│   │   └── setup.py                       # CLI de gerenciamento do banco (create, drop, seed, sync, status, reset)
 │   ├── features/
-│   │   └── feature_engineering.py   # Criação de features de vendas, preços e sazonalidade cíclica
-│   ├── ml/                          # Núcleo de Machine Learning (XGBoost)
-│   │   ├── comparator.py            # Backtesting e auditoria Real vs. Previsto
-│   │   ├── evaluation.py            # Métricas de avaliação (RMSE, MAE, MAPE, R²)
-│   │   ├── future_forecaster.py     # Projeção para 7, 14 e 30 dias com explicabilidade (XAI)
-│   │   ├── opportunity_recommender.py # Cálculo de Opportunity Score e quadrantes estratégicos
-│   │   ├── predictor.py             # Inferência com cálculo de intervalos de confiança
-│   │   └── trainer.py               # Treinamento, validação cruzada e persistência do XGBRegressor
-│   ├── schemas/                     # Modelos Pydantic de Request/Response
+│   │   └── feature_engineering.py         # Sanitização de séries e criação de features de vendas, preços e temporais
+│   ├── ml/                                # Núcleo de Machine Learning (XGBoost)
+│   │   ├── comparator.py                  # Backtesting e auditoria Real vs. Previsto
+│   │   ├── evaluation.py                  # Métricas de avaliação (RMSE, MAE, MAPE, R²)
+│   │   ├── future_forecaster.py           # Projeção para 7, 14 e 30 dias com explicabilidade dinâmica (XAI)
+│   │   ├── opportunity_recommender.py     # Cálculo de Opportunity Score e quadrantes estratégicos
+│   │   ├── predictor.py                   # Inferência com cálculo de intervalos de confiança
+│   │   ├── train_pipeline.py              # Pipeline executável de treinamento do XGBoost em baixa memória
+│   │   └── trainer.py                     # Treinamento, validação e persistência do XGBRegressor
+│   ├── schemas/                           # Modelos Pydantic de Request/Response
 │   │   ├── auth_schema.py
 │   │   ├── forecast_schema.py
 │   │   └── product_schema.py
-│   └── services/                    # Serviços de Negócio e Integração
-│       ├── forecast_service.py      # Orquestração de treinamento e relatórios de previsão
-│       ├── recommendation_service.py# Serviço de recomendações comerciais
-│       └── vendas_api_client.py     # Cliente HTTP e sincronizador SQLite da API de Histórico de Vendas
-├── tests/                           # Suíte de Testes Automatizados (Pytest - 29 testes)
-│   ├── conftest.py                  # Fixtures compartilhadas de vendas e produtos
-│   ├── test_api.py                  # Testes de rotas REST, autenticação, busca fuzzy e previsão
-│   ├── test_comparator.py           # Testes de validação e backtesting
-│   ├── test_feature_engineering.py  # Testes de geração de features de vendas e temporais
-│   ├── test_ml.py                   # Testes de treinamento, predição e métricas do XGBoost
-│   └── test_opportunity_recommender.py # Testes da matriz de oportunidades
-├── .env.example                     # Modelo de variáveis de ambiente
-├── iniciar_api_vendas.bat           # Script Windows para iniciar a API de Vendas na porta 8001
-├── main.py                          # Ponto de entrada principal do servidor (Porta 8000)
-├── render.yaml                      # Configuração de deploy em nuvem (Render)
-├── requirements.txt                 # Dependências Python do projeto
-├── setup.py                         # Metadados do pacote Python
-└── vercel.json                      # Configuração de deploy do frontend (Vercel)
+│   └── services/                          # Serviços de Negócio e Integração
+│       ├── forecast_service.py            # Orquestração de treinamento e relatórios de previsão
+│       ├── recommendation_service.py      # Serviço de recomendações comerciais
+│       └── vendas_api_client.py           # Cliente HTTP e sincronizador SQLite da API de Histórico de Vendas
+├── tests/                                 # Suíte de Testes Automatizados (Pytest - 50 testes)
+│   ├── conftest.py                        # Fixtures compartilhadas de vendas e produtos
+│   ├── test_acceptance_e2e.py             # Testes E2E de aceitação (jornadas CA-01 a CA-05)
+│   ├── test_api.py                        # Testes de rotas REST, autenticação, busca fuzzy, timeline e previsão
+│   ├── test_comparator.py                 # Testes de validação e backtesting
+│   ├── test_feature_engineering.py        # Testes de geração de features de vendas e temporais
+│   ├── test_integration_system.py         # Testes de integração de ponta a ponta entre módulos
+│   ├── test_ml.py                         # Testes de treinamento, predição e métricas do XGBoost
+│   ├── test_opportunity_recommender.py    # Testes da matriz de oportunidades
+│   └── test_unit_core.py                  # Testes unitários de segurança, validação de e-mail, XAI e sanitização
+├── .env.example                           # Modelo de variáveis de ambiente
+├── iniciar_api_vendas.bat                 # Script Windows para iniciar a API de Vendas na porta 8001
+├── main.py                                # Ponto de entrada principal do servidor (Porta 8000)
+├── render.yaml                            # Configuração de deploy em nuvem (Render)
+├── requirements.txt                       # Dependências Python do projeto
+├── setup.py                               # Metadados do pacote Python
+└── vercel.json                            # Configuração de deploy do frontend (Vercel)
 ```
 
 ---
@@ -290,9 +304,9 @@ No Windows, você pode iniciar o servidor da API de Histórico de Vendas executa
 - **Swagger da API de Vendas:** `http://127.0.0.1:8001/docs`
 - **Health Check:** `http://127.0.0.1:8001/health`
 
-> **Nota:** Caso o executável da porta `8001` não esteja aberto, o `VendasApiClient` localiza automaticamente o arquivo `historico_vendas.db` e sincroniza os **500 produtos** e **518.500 registros de vendas** diretamente para o banco local.
+> **Nota:** Caso o executável da porta `8001` não esteja aberto, o `VendasApiClient` localiza automaticamente o arquivo `historico_vendas.db` e sincroniza os **500 produtos** e **1.253.000 registros de vendas** diretamente para o banco local.
 
-### Passo 2: Iniciar o Servidor Principal TrendCommerce AI (Porta 8000)
+### Passo 2: Iniciar o Servidor Principal TrendEcommerce AI (Porta 8000)
 ```powershell
 python main.py
 ```
@@ -309,7 +323,7 @@ Acesse no navegador:
 
 ---
 
-### Utilitário CLI de Banco de Dados (`src.database.setup`)
+### Utilitário CLI de Banco de Dados e Treinamento ML
 
 ```powershell
 # Verificar status e contagem de registros (usuários, produtos e vendas)
@@ -320,6 +334,9 @@ python -m src.database.setup reset
 
 # Sincronizar/atualizar catálogo e histórico de vendas
 python -m src.database.setup sync
+
+# Re-treinar o modelo XGBoost sobre a base histórica completa
+python -m src.ml.train_pipeline
 ```
 
 ---
@@ -329,8 +346,8 @@ python -m src.database.setup sync
 | Método | Endpoint | Descrição |
 | :--- | :--- | :--- |
 | **Autenticação (`/api/v1/auth`)** | | |
-| `POST` | `/api/v1/auth/register` | Cadastra novo usuário e envia confirmação por e-mail / código OTP |
-| `POST` | `/api/v1/auth/verify-email` | Confirma o código OTP de verificação de cadastro e ativa a conta |
+| `POST` | `/api/v1/auth/register` | Cadastra novo usuário ativo (`is_active=True`) e sincroniza com o Supabase |
+| `POST` | `/api/v1/auth/verify-email` | Confirma o código OTP de verificação de cadastro e retorna token JWT |
 | `POST` | `/api/v1/auth/resend-verification` | Reenvia o e-mail/código de confirmação de cadastro |
 | `POST` | `/api/v1/auth/login` | Autentica usuário (com rate limiting) e retorna token JWT |
 | `POST` | `/api/v1/auth/google` | Autentica ou cadastra usuário via Google Identity Services (GIS) |
@@ -338,6 +355,7 @@ python -m src.database.setup sync
 | `POST` | `/api/v1/auth/google/verify-code` | Valida código OTP do Google e retorna token JWT |
 | `GET` | `/api/v1/auth/me` | Retorna os dados do perfil do usuário autenticado |
 | `POST` | `/api/v1/auth/forgot-password` | Gera e envia código OTP de 4 dígitos para recuperação de senha |
+| `POST` | `/api/v1/auth/verify-reset-code` | Valida o código OTP de recuperação antes da redefinição de senha |
 | `POST` | `/api/v1/auth/reset-password` | Redefine a senha do usuário validando o código OTP |
 | **Produtos & Catálogo (`/api/v1/products`)** | | |
 | `GET` | `/api/v1/products` | Lista paginada de produtos com filtros de busca, categoria e plataforma |
@@ -353,20 +371,22 @@ python -m src.database.setup sync
 | `POST` | `/api/v1/products/sync-categories` | Sincroniza manualmente os produtos e vendas da API oficial |
 | **Previsão de Demanda & IA (`/api/v1/forecast`)** | | |
 | `POST` | `/api/v1/forecast/predict` | Projeção de demanda para 7, 14 ou 30 dias com intervalos de confiança e XAI |
+| `GET` | `/api/v1/forecast/timeline/{product_id}` | Linha do tempo híbrida (histórico `1m`, `6m`, `1y`, `5y` + projeção XGBoost `7/14/30d`) |
+| `GET` | `/api/v1/forecast/product/{product_id}/timeline` | Alias para a rota de linha do tempo híbrida do produto |
 | `GET` | `/api/v1/forecast/summary` | Resumo executivo consolidado de previsões de todos os produtos ativos |
-| `GET` | `/api/v1/forecast/ranking` | Ranking preditivo Top 7 Geral e Top 5 por Categoria com justificativas da IA |
+| `GET` | `/api/v1/forecast/ranking` | Ranking preditivo Top 7 Geral e Top 5 por Categoria (PTI) com justificativas da IA |
 | `POST` | `/api/v1/forecast/compare` | Comparador preditivo lado a lado (`product_id_a` vs. `product_id_b`) |
 | **Recomendações & Saúde do Sistema** | | |
 | `GET` | `/api/v1/recommendations/top-products` | Melhores oportunidades comerciais classificadas por score e quadrante (POI) |
 | `GET` | `/api/v1/health` | Health check da API, banco de dados e modelo XGBoost |
-| `POST` | `/api/v1/admin/reseed` | Recarrega e sincroniza o catálogo e histórico inicial |
+| `GET/POST` | `/api/v1/admin/reseed` | Recarrega e sincroniza o catálogo e histórico inicial |
 | `GET` | `/api/v1/debug/status` | Contagem detalhada de usuários, produtos e histórico de vendas |
 
 ---
 
 ## 🧪 Qualidade e Testes
 
-A suíte de testes automatizados utiliza **Pytest** e cobre autenticação (login, registro, Google OAuth, OTP e recuperação de senha), rotas de catálogo, busca por similaridade de caracteres, engenharia de features, treinamento/inferência do modelo XGBoost, backtesting (`DemandComparator`) e recomendação de oportunidades (`OpportunityRecommender`).
+A suíte de testes automatizados utiliza **Pytest** e cobre testes unitários, de integração e de aceitação (E2E): autenticação (login, registro, Google OAuth, OTP e recuperação de senha), rotas de catálogo, busca por similaridade de caracteres, linha do tempo híbrida (`1m`, `6m`, `1y`, `5y`), engenharia de features, treinamento/inferência do modelo XGBoost, backtesting (`DemandComparator`) e recomendação de oportunidades (`OpportunityRecommender`).
 
 Para executar todos os testes:
 ```powershell
@@ -375,7 +395,7 @@ pytest -v
 
 Status atual da suíte:
 ```text
-======================= 29 passed in 25.04s =======================
+======================= 50 passed in 26.15s =======================
 ```
 
 ---
@@ -388,5 +408,5 @@ Status atual da suíte:
 ---
 
 <div align="center">
-Desenvolvido com Python, FastAPI, SQLAlchemy e XGBoost por <b>TrendCommerce AI Team</b>.
+Desenvolvido com Python, FastAPI, SQLAlchemy e XGBoost por <b>TrendEcommerce AI Team</b>.
 </div>
