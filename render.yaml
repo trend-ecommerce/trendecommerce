@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: trendcommerce-api
+    name: trendecommerce
     runtime: python
     plan: free
     buildCommand: "pip install --upgrade pip setuptools wheel && pip install --prefer-binary -r requirements.txt"

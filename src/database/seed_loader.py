@@ -16,6 +16,7 @@ from typing import Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from src.database.models import Product, SalesHistory
 from src.services.vendas_api_client import vendas_client
@@ -212,6 +213,41 @@ def ensure_calibrated_databases(db_manager=None) -> bool:
     return False
 
 
+def _seed_contingency_catalog(session: Session):
+    """Fallback de contingência com catálogo básico calibrado caso o seed JSON não seja encontrado."""
+    import numpy as np
+    products = [
+        Product(external_id="PROD_101", platform="api_vendas", title="Notebook Dell Inspiron 15 Intel Core i7 16GB 512GB SSD", category="Eletrônicos", price=3499.99),
+        Product(external_id="PROD_102", platform="api_vendas", title="MacBook Air M2 13.6 Polegadas 8GB RAM 256GB SSD", category="Eletrônicos", price=6899.00),
+        Product(external_id="PROD_103", platform="api_vendas", title="Smartphone Samsung Galaxy S23 5G 256GB", category="Eletrônicos", price=3199.00),
+        Product(external_id="PROD_104", platform="api_vendas", title="Creatina Monohidratada Pura Micronizada 300g", category="Esportes e fitness", price=119.90),
+        Product(external_id="PROD_105", platform="api_vendas", title="Whey Protein Concentrado 100% Pouch 900g", category="Esportes e fitness", price=149.90),
+        Product(external_id="PROD_106", platform="api_vendas", title="Tênis Esportivo Running Amortecimento Pro", category="Moda e acessórios", price=289.90),
+        Product(external_id="PROD_107", platform="api_vendas", title="Batom Líquido Matte Longa Duração Efeito Aveludado", category="Beleza e cuidados pessoais", price=39.90),
+        Product(external_id="PROD_108", platform="api_vendas", title="Cafeteira Elétrica Programável Jarra Inox 1.5L", category="Casa e decoração", price=229.90),
+    ]
+    session.add_all(products)
+    session.flush()
+
+    base_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    for product in products:
+        for day in range(90):
+            sale_date = base_date - timedelta(days=89 - day)
+            weekend_factor = 1.3 if sale_date.weekday() in [5, 6] else 1.0
+            qty = max(2, int(np.random.poisson(20) * weekend_factor))
+            sale = SalesHistory(
+                product_id=product.id,
+                date=sale_date,
+                quantity_sold=qty,
+                price_at_date=product.price,
+                available_quantity=100,
+                platform=product.platform
+            )
+            session.add(sale)
+    session.commit()
+    print("[SeedLoader] Catálogo de contingência carregado com sucesso (8 produtos).")
+
+
 def seed_database_if_empty(session: Session):
     """Garante catálogo oficial dos 500 produtos e histórico calibrado até 2026-11-30 (sem fallback fictício)."""
     try:
@@ -250,10 +286,61 @@ def seed_database_if_empty(session: Session):
                 run_update_nov30()
                 session.expire_all()
                 return
-            except Exception as err:
-                logger.warning(f"[SeedLoader] Falha ao executar update_historical_data_to_nov30: {err}")
-        else:
-            logger.error("[SeedLoader] Nenhum catálogo oficial (historico_vendas.db nem data/catalog_500_products.json) encontrado.")
+
+        # Fallback para initial_seed.json caso a API externa não esteja acessível e o banco esteja vazio
+        if session.query(Product).count() > 0:
+            return
+
+        seed_file = Path(__file__).parent.parent.parent / "data" / "initial_seed.json"
+        if not seed_file.exists():
+            return
+
+        with open(seed_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        products_data = data.get("products", [])
+        sales_data = data.get("sales_history", [])
+
+        for p_data in products_data:
+            product = Product(
+                id=p_data.get("id"),
+                external_id=p_data.get("external_id") or f"PROD_{p_data.get('id')}",
+                platform="api_vendas",
+                title=p_data.get("title") or "Produto",
+                category=p_data.get("category") or "Geral",
+                price=float(p_data.get("price") or 100.0),
+                currency=p_data.get("currency") or "BRL",
+                condition=p_data.get("condition") or "new",
+                url=p_data.get("url"),
+                attributes=p_data.get("attributes"),
+                created_at=_parse_dt(p_data.get("created_at")),
+                updated_at=_parse_dt(p_data.get("updated_at")),
+                is_active=bool(p_data.get("is_active", True))
+            )
+            session.add(product)
+        session.flush()
+
+        if sales_data:
+            today_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            seed_dates = [_parse_dt(s.get("date")) for s in sales_data if s.get("date")]
+            max_seed_date = max(seed_dates) if seed_dates else today_midnight
+            seed_shift = today_midnight - max_seed_date
+
+            for s_data in sales_data:
+                shifted_date = _parse_dt(s_data.get("date")) + seed_shift
+                sales_entry = SalesHistory(
+                    id=s_data.get("id"),
+                    product_id=s_data.get("product_id"),
+                    date=shifted_date,
+                    quantity_sold=int(s_data.get("quantity_sold", 10)),
+                    price_at_date=float(s_data.get("price_at_date", 100.0)),
+                    available_quantity=int(s_data.get("available_quantity", 50)),
+                    platform="api_vendas",
+                    collected_at=_parse_dt(s_data.get("collected_at"))
+                )
+                session.add(sales_entry)
+
+        session.commit()
     except Exception as e:
         session.rollback()
         print(f"[SeedLoader] Erro ao sincronizar seed: {e}")
