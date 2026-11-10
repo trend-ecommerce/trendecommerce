@@ -36,14 +36,14 @@
     "random_state": 42
   },
   "training_metrics": {
-    "train_rmse": 9.96127700805664,
-    "test_rmse": 11.559617042541504,
-    "train_mae": 4.656951904296875,
-    "test_mae": 4.703941345214844,
-    "train_r2": 0.9863102436065674,
-    "test_r2": 0.9817362427711487,
-    "train_samples": 999200,
-    "test_samples": 249800,
+    "train_rmse": 8.35850715637207,
+    "test_rmse": 9.640201568603516,
+    "train_mae": 4.028036117553711,
+    "test_mae": 4.059604167938232,
+    "train_r2": 0.9897648692131042,
+    "test_r2": 0.9859757423400879,
+    "train_samples": 1010400,
+    "test_samples": 252600,
     "n_features": 23
   }
 }

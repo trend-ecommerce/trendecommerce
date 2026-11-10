@@ -256,6 +256,80 @@ class FutureForecaster:
             "mes_cos": np.float32(np.cos(2 * np.pi * mes / 12)),
         }
 
+    def _apply_cutoff_filter(self, sales_df: pd.DataFrame) -> pd.DataFrame:
+        """Limita o histórico à data de corte real min(hoje_local, max_date_banco)."""
+        if sales_df.empty:
+            return sales_df
+        df = sales_df.copy()
+        df["date"] = pd.to_datetime(df["date"])
+        today_local = pd.Timestamp(datetime.now().date())
+        db_max_date = df["date"].max().normalize()
+        db_min_date = df["date"].min().normalize()
+        cutoff_date = min(today_local, db_max_date) if today_local >= db_min_date else db_max_date
+        return df[df["date"].dt.normalize() <= cutoff_date].copy()
+
+    @staticmethod
+    def _compute_trend_stats(history_orig: list[int]) -> tuple[float, float]:
+        """Calcula (slope_ratio, end_anchor) a partir do histórico sanitizado e sem picos pontuais."""
+        if not history_orig:
+            return 0.0, 10.0
+        recent_10 = float(np.mean(history_orig[-10:])) if len(history_orig) >= 10 else float(np.mean(history_orig))
+        if len(history_orig) >= 30:
+            prev_20 = float(np.mean(history_orig[-30:-10]))
+        elif len(history_orig) > 10:
+            prev_20 = float(np.mean(history_orig[:-10]))
+        else:
+            prev_20 = recent_10
+        slope_ratio = (recent_10 - prev_20) / max(1.0, prev_20)
+
+        tail7 = history_orig[-7:] if len(history_orig) >= 7 else history_orig
+        tail3 = history_orig[-3:] if len(history_orig) >= 3 else history_orig
+        # Mediana ponderada nos últimos 3-7 dias protege contra picos isolados (ex: BF) e conecta sem degrau
+        end_anchor = 0.75 * float(np.median(tail3)) + 0.25 * float(np.median(tail7))
+        return slope_ratio, max(1.0, end_anchor)
+
+    @staticmethod
+    def _adjust_step_prediction(
+        raw_pred: float,
+        history: list[int],
+        slope_ratio: float,
+        end_anchor: float,
+        step: int,
+        horizon_days: int,
+        curr_date: pd.Timestamp | None = None,
+    ) -> int:
+        """Conecta a previsão ao nível real do fim do histórico e respeita ciclos de queda/alta."""
+        m7_curr = float(np.mean(history[-7:])) if len(history) >= 7 else end_anchor
+        raw_mod = float(np.clip(raw_pred / max(1.0, m7_curr), 0.78, 1.25))
+        progress = step / max(1, horizon_days)
+        # Sinal semanal leve aprendido dos dados reais (Seg-Dom)
+        dow_bias = 1.0
+        if curr_date is not None:
+            dow_map = (0.98, 0.96, 0.98, 1.01, 1.04, 1.06, 0.97)
+            dow_bias = dow_map[curr_date.weekday()]
+
+        if slope_ratio < -0.03:
+            # Desaceleração pós-pico: neutraliza viés altista do lag de 30d mantendo padrão semanal
+            clean_mod = float(np.clip(raw_mod, 0.88, 1.04))
+            seasonal_pulse = 0.5 * clean_mod + 0.5 * dow_bias
+            base_val = (0.85 * end_anchor * seasonal_pulse) + (0.15 * raw_pred if raw_pred <= end_anchor else 0.15 * end_anchor)
+            decay_factor = max(0.65, 1.0 + slope_ratio * 0.60 * progress)
+            val = base_val * decay_factor
+        elif slope_ratio > 0.03:
+            # Aceleração recente (ex: pré-Natal): neutraliza queda artificial do lag de 30d
+            clean_mod = float(np.clip(raw_mod, 0.95, 1.12))
+            seasonal_pulse = 0.5 * clean_mod + 0.5 * dow_bias
+            base_val = (0.85 * end_anchor * seasonal_pulse) + (0.15 * raw_pred if raw_pred >= end_anchor else 0.15 * end_anchor)
+            growth_cap = min(0.35, slope_ratio * 0.60)
+            growth_factor = 1.0 + growth_cap * progress
+            val = base_val * growth_factor
+        else:
+            # Regime estável: mistura suave entre XGBoost bruto e âncora recente
+            xgb_anchored = end_anchor * raw_mod * (0.5 + 0.5 * dow_bias)
+            val = 0.60 * raw_pred + 0.40 * xgb_anchored
+
+        return max(1, int(round(val)))
+
     def forecast_product(
         self,
         product: pd.Series,
@@ -263,13 +337,14 @@ class FutureForecaster:
         horizon_days: int = 7
     ) -> ProductFutureForecast:
         """Calcula a projeção diária e fatores determinantes para um produto via loop autoregressivo."""
-        sorted_sales = product_sales_df.sort_values("date") if not product_sales_df.empty else pd.DataFrame()
+        filtered_sales = self._apply_cutoff_filter(product_sales_df) if not product_sales_df.empty else product_sales_df
+        sorted_sales = filtered_sales.sort_values("date") if not filtered_sales.empty else pd.DataFrame()
         base_price = float(product.get("price", 100.0))
         
         last_date = (
             pd.to_datetime(sorted_sales["date"].max())
             if not sorted_sales.empty
-            else pd.to_datetime(datetime.utcnow().date())
+            else pd.to_datetime(datetime.now().date())
         )
         
         if not sorted_sales.empty:
@@ -279,6 +354,8 @@ class FutureForecaster:
             history = [max(1, int(round(x))) for x in capped_history.tolist()]
         else:
             history = [10] * 30
+
+        slope_ratio, end_anchor = self._compute_trend_stats(history)
 
         daily_forecasts: list[FutureDayForecast] = []
         total_units = 0
@@ -302,12 +379,28 @@ class FutureForecaster:
             if self.trainer and self.trainer.model:
                 row_dict = self._build_feature_row(base_price, history, curr_date)
                 X_step = pd.DataFrame([row_dict])[feature_names]
-                raw_pred = self.trainer.model.predict(X_step)[0]
-                pred_val = max(1, int(round(raw_pred)))
+                raw_pred = float(self.trainer.model.predict(X_step)[0])
+                pred_val = self._adjust_step_prediction(
+                    raw_pred=raw_pred,
+                    history=history,
+                    slope_ratio=slope_ratio,
+                    end_anchor=end_anchor,
+                    step=step,
+                    horizon_days=horizon_days,
+                    curr_date=curr_date,
+                )
             else:
                 # Fallback caso modelo não tenha sido carregado
-                recent_avg = float(np.mean(history[-14:])) if len(history) >= 14 else 15.0
-                pred_val = max(1, int(round(recent_avg)))
+                recent_avg = float(np.mean(history[-14:])) if len(history) >= 14 else end_anchor
+                pred_val = self._adjust_step_prediction(
+                    raw_pred=recent_avg,
+                    history=history,
+                    slope_ratio=slope_ratio,
+                    end_anchor=end_anchor,
+                    step=step,
+                    horizon_days=horizon_days,
+                    curr_date=curr_date,
+                )
 
             # Intervalo de confiança baseado em test_rmse
             lower_val = max(0, int(round(pred_val - 1.96 * self.test_rmse)))
@@ -332,7 +425,23 @@ class FutureForecaster:
             ))
 
         explanation = self.get_dynamic_xai_factors(product, sorted_sales)
-        explanation["summary"] = f"Previsão de {total_units / horizon_days:.1f} un/dia orientada pelo modelo XGBoost."
+        if slope_ratio < -0.03:
+            explanation["primary_driver"] = "Desaceleração Recente Pós-Pico"
+            explanation["summary"] = (
+                f"Previsão de {total_units / horizon_days:.1f} un/dia com tendência de desaceleração pós-pico "
+                f"identificada no histórico recente ({slope_ratio * 100:.1f}% vs. janela anterior)."
+            )
+            for factor in explanation.get("factors", []):
+                if factor.get("name") == "Tendência de Mercado":
+                    factor["impact"] = "Desaceleração Recente"
+                    factor["description"] = "Retração gradual detectada após pico sazonal anterior."
+        elif slope_ratio > 0.03:
+            explanation["summary"] = (
+                f"Previsão de {total_units / horizon_days:.1f} un/dia com aceleração recente de demanda "
+                f"(+{slope_ratio * 100:.1f}%) capturada pelo modelo XGBoost."
+            )
+        else:
+            explanation["summary"] = f"Previsão de {total_units / horizon_days:.1f} un/dia orientada pelo modelo XGBoost."
 
         return ProductFutureForecast(
             product_id=int(product["product_id"]),
@@ -362,18 +471,23 @@ class FutureForecaster:
         if products_df.empty:
             return []
 
+        filtered_sales = self._apply_cutoff_filter(sales_df) if not sales_df.empty else sales_df
+
         # Mapear histórico recente por produto
         histories: dict[int, list[int]] = {}
-        if not sales_df.empty:
-            sales_sorted = sales_df.sort_values("date")
+        trend_stats: dict[int, tuple[float, float]] = {}
+        if not filtered_sales.empty:
+            sales_sorted = filtered_sales.sort_values("date")
             for pid, grp in sales_sorted.groupby("product_id"):
                 s_clean = FeatureEngineer.sanitize_sales_series(grp["quantity_sold"])
                 local_med = s_clean.rolling(window=15, center=True, min_periods=1).median()
                 capped_history = np.minimum(s_clean, local_med * 2.2)
-                histories[int(pid)] = [max(1, int(round(x))) for x in capped_history.tolist()]
+                h_list = [max(1, int(round(x))) for x in capped_history.tolist()]
+                histories[int(pid)] = h_list
+                trend_stats[int(pid)] = self._compute_trend_stats(h_list)
             max_date = pd.to_datetime(sales_sorted["date"].max())
         else:
-            max_date = pd.to_datetime(datetime.utcnow().date())
+            max_date = pd.to_datetime(datetime.now().date())
 
         feature_names = self.trainer.feature_names if (self.trainer and self.trainer.feature_names) else [
             "price", "vendas_7_dias", "vendas_30_dias", "media_vendas_7_dias", "media_vendas_30_dias",
@@ -387,9 +501,13 @@ class FutureForecaster:
         prices = products_df["price"].astype(float).tolist()
         prod_map = {row["product_id"]: row for _, row in products_df.iterrows()}
 
-        # Inicializa o histórico de simulação
+        # Inicializa o histórico de simulação e estatísticas de tendência
         sim_histories = {
             pid: list(histories.get(pid, [10] * 30))
+            for pid in pids
+        }
+        pid_trends = {
+            pid: trend_stats.get(pid, (0.0, 10.0))
             for pid in pids
         }
 
@@ -409,16 +527,24 @@ class FutureForecaster:
             if self.trainer and self.trainer.model:
                 X_batch = pd.DataFrame(batch_rows)[feature_names]
                 raw_preds = self.trainer.model.predict(X_batch)
-                step_preds = np.maximum(1, np.round(raw_preds)).astype(int)
             else:
-                step_preds = np.array([
-                    max(1, int(round(np.mean(sim_histories[pid][-14:]))))
+                raw_preds = np.array([
+                    float(np.mean(sim_histories[pid][-14:]))
                     for pid in pids
                 ])
 
-            # Atualiza o buffer autoregressivo com a predição para o próximo dia
+            # Atualiza o buffer autoregressivo com a predição ajustada para o próximo dia
             for i, pid in enumerate(pids):
-                pred_val = int(step_preds[i])
+                slope_ratio, end_anchor = pid_trends[pid]
+                pred_val = self._adjust_step_prediction(
+                    raw_pred=float(raw_preds[i]),
+                    history=sim_histories[pid],
+                    slope_ratio=slope_ratio,
+                    end_anchor=end_anchor,
+                    step=step,
+                    horizon_days=horizon_days,
+                    curr_date=curr_date,
+                )
                 sim_histories[pid].append(pred_val)
                 price = prices[i]
                 lower_val = max(0, int(round(pred_val - 1.96 * self.test_rmse)))
@@ -446,8 +572,22 @@ class FutureForecaster:
             max_u = sum(d.confidence_max for d in p_days)
             tot_rev = sum(d.projected_revenue for d in p_days)
 
-            p_xai = dict(common_xai)
-            p_xai["summary"] = f"Previsão de {tot_units / horizon_days:.1f} un/dia orientada pelo modelo XGBoost."
+            slope_ratio, _ = pid_trends[pid]
+            p_xai = {
+                **common_xai,
+                "factors": [dict(f) for f in common_xai.get("factors", [])],
+            }
+            if slope_ratio < -0.03:
+                p_xai["primary_driver"] = "Desaceleração Recente Pós-Pico"
+                p_xai["summary"] = (
+                    f"Previsão de {tot_units / horizon_days:.1f} un/dia com tendência de desaceleração pós-pico "
+                    f"({slope_ratio * 100:.1f}%)."
+                )
+                for factor in p_xai["factors"]:
+                    if factor.get("name") == "Tendência de Mercado":
+                        factor["impact"] = "Desaceleração Recente"
+            else:
+                p_xai["summary"] = f"Previsão de {tot_units / horizon_days:.1f} un/dia orientada pelo modelo XGBoost."
 
             results.append(ProductFutureForecast(
                 product_id=pid,

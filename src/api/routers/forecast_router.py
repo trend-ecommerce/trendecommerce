@@ -1,9 +1,10 @@
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from typing import Optional
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db, get_ml_forecaster
@@ -25,9 +26,84 @@ from src.schemas.forecast_schema import (
 router = APIRouter(prefix="/forecast", tags=["Previsão de Demanda & IA"])
 
 
-_predict_cache: dict[tuple[int, int], tuple[float, ProductForecastResponse]] = {}
-_summary_cache: dict[int, tuple[float, ForecastSummaryResponse]] = {}
-_ranking_cache: dict[int, tuple[float, ForecastRankingResponse]] = {}
+_predict_cache: dict[tuple[int, int, str], tuple[float, ProductForecastResponse]] = {}
+_summary_cache: dict[tuple[int, str], tuple[float, ForecastSummaryResponse]] = {}
+_ranking_cache: dict[tuple[int, str], tuple[float, ForecastRankingResponse]] = {}
+_timeline_cache: dict[tuple[int, str, int, str], tuple[float, ProductTimelineResponse]] = {}
+_timeline_cache.clear()
+
+
+def _get_today_local() -> pd.Timestamp:
+    """Retorna a data atual local normalizada (00:00:00)."""
+    return pd.Timestamp(datetime.now().date())
+
+
+def _apply_cutoff_filter(sales_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Timestamp]:
+    """Filtra o histórico até a data de corte real min(hoje, max_date_banco)."""
+    if sales_df.empty:
+        return sales_df, _get_today_local()
+
+    df = sales_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    today_local = _get_today_local()
+    db_max_date = df["date"].max().normalize()
+    db_min_date = df["date"].min().normalize()
+    cutoff_date = min(today_local, db_max_date) if today_local >= db_min_date else db_max_date
+    df = df[df["date"].dt.normalize() <= cutoff_date].copy()
+    max_date = df["date"].max() if not df.empty else cutoff_date
+    return df, max_date
+
+
+def _load_recent_sales_df(db: Session, days_window: int = 100) -> pd.DataFrame:
+    """Carrega apenas a janela recente de vendas (colunas essenciais) até a data de corte."""
+    row = db.query(
+        func.min(func.date(SalesHistory.date)),
+        func.max(func.date(SalesHistory.date)),
+    ).first()
+    if not row or not row[0] or not row[1]:
+        return pd.DataFrame()
+
+    db_min_dt = pd.Timestamp(str(row[0])[:10])
+    db_max_dt = pd.Timestamp(str(row[1])[:10])
+    today_local = _get_today_local()
+    cutoff_dt = min(today_local, db_max_dt) if today_local >= db_min_dt else db_max_dt
+    cutoff_str = cutoff_dt.strftime("%Y-%m-%d")
+    start_dt = cutoff_dt - pd.Timedelta(days=days_window)
+    start_str = start_dt.strftime("%Y-%m-%d")
+
+    rows = (
+        db.query(
+            SalesHistory.product_id,
+            SalesHistory.date,
+            SalesHistory.quantity_sold,
+            SalesHistory.price_at_date,
+            SalesHistory.available_quantity,
+            SalesHistory.platform,
+        )
+        .filter(
+            SalesHistory.date >= (start_dt.to_pydatetime() - timedelta(days=1)),
+            SalesHistory.date <= (cutoff_dt.to_pydatetime() + timedelta(days=1)),
+            func.date(SalesHistory.date) >= start_str,
+            func.date(SalesHistory.date) <= cutoff_str,
+        )
+        .all()
+    )
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(
+        [
+            {
+                "product_id": r[0],
+                "date": r[1],
+                "quantity_sold": r[2],
+                "price": r[3] or 100.0,
+                "available_quantity": r[4] or 50,
+                "platform": r[5],
+            }
+            for r in rows
+        ]
+    )
 
 
 @router.post("/predict", response_model=ProductForecastResponse, summary="Gerar previsão de demanda com XGBoost")
@@ -38,7 +114,8 @@ def predict_product_demand(
 ):
     """Executa a simulação autoregressiva do XGBoost com cálculo de faixas de confiança (Min/Max) e cache de alta velocidade."""
     now_ts = time.time()
-    cache_key = (request.product_id, request.horizon_days)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cache_key = (request.product_id, request.horizon_days, today_str)
     if cache_key in _predict_cache:
         cached_time, cached_val = _predict_cache[cache_key]
         if now_ts - cached_time < 180:  # 3 min cache
@@ -82,6 +159,7 @@ def predict_product_demand(
         }
         for s in sales
     ])
+    sales_df, _ = _apply_cutoff_filter(sales_df)
 
     try:
         forecast_result = forecaster.forecast_product(
@@ -134,15 +212,17 @@ def get_forecast_summary(
 ):
     """Gera projeção consolidada para todos os produtos ativos."""
     now_ts = time.time()
-    if horizon_days in _summary_cache:
-        cached_time, cached_val = _summary_cache[horizon_days]
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cache_key = (horizon_days, today_str)
+    if cache_key in _summary_cache:
+        cached_time, cached_val = _summary_cache[cache_key]
         if now_ts - cached_time < 180:
             return cached_val
 
     products = db.query(Product).filter(Product.is_active.is_(True)).all()
-    sales = db.query(SalesHistory).all()
+    sales_df = _load_recent_sales_df(db, days_window=100) if products else pd.DataFrame()
 
-    if not products or not sales:
+    if not products or sales_df.empty:
         return ForecastSummaryResponse(
             horizon_days=horizon_days,
             total_products=0,
@@ -162,17 +242,7 @@ def get_forecast_summary(
         }
         for p in products
     ])
-    sales_df = pd.DataFrame([
-        {
-            "product_id": s.product_id,
-            "date": s.date,
-            "quantity_sold": s.quantity_sold,
-            "price": s.price_at_date or 100.0,
-            "available_quantity": s.available_quantity or 50,
-            "platform": s.platform
-        }
-        for s in sales
-    ])
+    sales_df, _ = _apply_cutoff_filter(sales_df)
 
     forecasts = forecaster.forecast_all_products(products_df, sales_df, horizon_days=horizon_days)
 
@@ -216,11 +286,9 @@ def get_forecast_summary(
         total_predicted_units=total_units,
         items=items
     )
-    _summary_cache[horizon_days] = (now_ts, summary_result)
+    _summary_cache[cache_key] = (now_ts, summary_result)
     return summary_result
 
-
-_ranking_cache: dict[int, tuple[float, ForecastRankingResponse]] = {}
 
 @router.get("/ranking", response_model=ForecastRankingResponse, summary="Ranking preditivo de produtos e categorias")
 def get_forecast_ranking(
@@ -230,15 +298,17 @@ def get_forecast_ranking(
 ):
     """Retorna Top 7 produtos gerais e Top 5 produtos por categoria para os próximos 30 dias com explicabilidade."""
     now_ts = time.time()
-    if horizon_days in _ranking_cache:
-        cached_time, cached_data = _ranking_cache[horizon_days]
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cache_key = (horizon_days, today_str)
+    if cache_key in _ranking_cache:
+        cached_time, cached_data = _ranking_cache[cache_key]
         if now_ts - cached_time < 180:  # 3 min cache
             return cached_data
 
     products = db.query(Product).filter(Product.is_active.is_(True)).all()
-    sales = db.query(SalesHistory).all()
+    sales_df = _load_recent_sales_df(db, days_window=100) if products else pd.DataFrame()
 
-    if not products or not sales:
+    if not products or sales_df.empty:
         return ForecastRankingResponse(
             horizon_days=horizon_days,
             top_overall=[],
@@ -256,17 +326,7 @@ def get_forecast_ranking(
         }
         for p in products
     ])
-    sales_df = pd.DataFrame([
-        {
-            "product_id": s.product_id,
-            "date": s.date,
-            "quantity_sold": s.quantity_sold,
-            "price": s.price_at_date or 100.0,
-            "available_quantity": s.available_quantity or 50,
-            "platform": s.platform
-        }
-        for s in sales
-    ])
+    sales_df, _ = _apply_cutoff_filter(sales_df)
 
     import numpy as np
 
@@ -274,10 +334,11 @@ def get_forecast_ranking(
     forecasts = forecaster.forecast_all_products(products_df, sales_df, horizon_days=horizon_days)
 
     # Cálculo do Índice de Tração Preditiva (PTI): volume futuro (40%), receita bruta (35%) e aceleração % recente (25%)
+    from src.features.feature_engineering import FeatureEngineer
     growth_map = {}
     for pid, grp in sales_df.groupby("product_id"):
         grp_sorted = grp.sort_values("date")
-        qty = grp_sorted["quantity_sold"].values
+        qty = FeatureEngineer.sanitize_sales_series(grp_sorted["quantity_sold"]).values
         if len(qty) >= 14:
             recent = float(np.mean(qty[-7:]))
             prior = float(np.mean(qty[-14:-7]))
@@ -390,7 +451,7 @@ def get_forecast_ranking(
         top_overall=top_overall,
         top_by_category=top_by_category
     )
-    _ranking_cache[horizon_days] = (now_ts, response_obj)
+    _ranking_cache[cache_key] = (now_ts, response_obj)
     return response_obj
 
 
@@ -421,6 +482,8 @@ def compare_products_forecast(
 
     sa_df = pd.DataFrame([{"product_id": s.product_id, "date": s.date, "quantity_sold": s.quantity_sold, "price": s.price_at_date or prod_a.price or 100.0, "available_quantity": s.available_quantity or 50, "platform": s.platform} for s in sales_a])
     sb_df = pd.DataFrame([{"product_id": s.product_id, "date": s.date, "quantity_sold": s.quantity_sold, "price": s.price_at_date or prod_b.price or 100.0, "available_quantity": s.available_quantity or 50, "platform": s.platform} for s in sales_b])
+    sa_df, _ = _apply_cutoff_filter(sa_df)
+    sb_df, _ = _apply_cutoff_filter(sb_df)
 
     fa = forecaster.forecast_product(pa_series, sa_df, horizon_days=request.horizon_days)
     fb = forecaster.forecast_product(pb_series, sb_df, horizon_days=request.horizon_days)
@@ -491,8 +554,6 @@ MONTHS_PT_BR = {
     7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'
 }
 
-_timeline_cache: dict[tuple[int, str, int], tuple[float, ProductTimelineResponse]] = {}
-
 
 @router.get("/timeline/{product_id}", response_model=ProductTimelineResponse, summary="Linha do tempo híbrida (histórico real + projeção XGBoost)")
 @router.get("/product/{product_id}/timeline", response_model=ProductTimelineResponse, summary="Linha do tempo híbrida (alias)")
@@ -515,7 +576,8 @@ def get_product_demand_timeline(
         history_range_clean = "6m"
 
     now_ts = time.time()
-    cache_key = (product_id, history_range_clean, horizon_days)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cache_key = (product_id, history_range_clean, horizon_days, today_str)
     if cache_key in _timeline_cache:
         cached_ts, cached_resp = _timeline_cache[cache_key]
         if now_ts - cached_ts < 120:  # 2 min cache
@@ -551,13 +613,19 @@ def get_product_demand_timeline(
         }
         for s in sales
     ])
+    sales_df, _ = _apply_cutoff_filter(sales_df)
     sales_df["date"] = pd.to_datetime(sales_df["date"])
     sales_df = sales_df.sort_values("date").reset_index(drop=True)
+    sales_for_forecast = sales_df.copy()
 
-    # Trata apenas outliers inferiores de erro (ex: 0 ou 1 venda por falha de captura),
-    # mantendo 100% intactos os outliers superiores válidos (picos reais de compras grandes)
+    # Remove outliers inferiores (zeros/quedas bruscas) e agulhas isoladas (1 dia)
+    # de forma determinística por produto e data, mantendo 1m/6m/1y/5y consistentes.
     from src.features.feature_engineering import FeatureEngineer
-    sales_df["quantity_sold"] = FeatureEngineer.sanitize_sales_series(sales_df["quantity_sold"])
+    sales_df["quantity_sold"] = FeatureEngineer.sanitize_sales_series(
+        sales_df["quantity_sold"],
+        product_id=product_id,
+        dates=sales_df["date"]
+    )
 
     max_date = sales_df["date"].max()
 
@@ -583,23 +651,33 @@ def get_product_demand_timeline(
         start_date = max_date - pd.DateOffset(years=5)
         subset = sales_df[sales_df["date"] >= start_date].copy()
         subset["period"] = subset["date"].dt.to_period("M")
-        grp = subset.groupby("period").agg({"quantity_sold": "mean", "date": "first"}).reset_index()
-        for _, row in grp.iterrows():
+
+        # Para cada mês, seleciona o registro REAL do dia 15 (ou o último dia disponível do mês atual)
+        # sem tirar média (.mean()), garantindo que a mesma data mostre SEMPRE o mesmo valor em 1y e 5y!
+        sampled_rows = []
+        for _, grp_m in subset.groupby("period"):
+            day15 = grp_m[grp_m["date"].dt.day == 15]
+            if not day15.empty:
+                sampled_rows.append(day15.iloc[0])
+            else:
+                sampled_rows.append(grp_m.iloc[-1])
+
+        for row in sampled_rows:
             d = row["date"]
-            actual_date = min(d + pd.Timedelta(days=14), max_date) if (d.month == max_date.month and d.year == max_date.year) else (d + pd.Timedelta(days=14))
             lbl = f"{MONTHS_PT_BR[d.month]}/{str(d.year)[2:]}"
             history_points.append(TimelineHistoryPoint(
-                date=actual_date.strftime("%d/%m/%Y"),
+                date=d.strftime("%d/%m/%Y"),
                 label=lbl,
                 demand=round(float(row["quantity_sold"]), 1),
                 is_real=True
             ))
 
-    # 3. Métricas históricas do subset selecionado
-    if not subset.empty:
-        hist_avg = round(float(subset["quantity_sold"].mean()), 1)
-        hist_peak = round(float(subset["quantity_sold"].max()), 1)
-        hist_trough = round(float(subset["quantity_sold"].min()), 1)
+    # 3. Métricas históricas sempre a partir de history_points (já limpos de outliers)
+    if history_points:
+        demands = [float(h.demand) for h in history_points]
+        hist_avg = round(float(sum(demands) / len(demands)), 1)
+        hist_peak = round(float(max(demands)), 1)
+        hist_trough = round(float(min(demands)), 1)
     else:
         hist_avg, hist_peak, hist_trough = 0.0, 0.0, 0.0
 
@@ -615,7 +693,7 @@ def get_product_demand_timeline(
 
     forecast_res = forecaster.forecast_product(
         product=product_series,
-        product_sales_df=sales_df,
+        product_sales_df=sales_for_forecast,
         horizon_days=horizon_days
     )
 
