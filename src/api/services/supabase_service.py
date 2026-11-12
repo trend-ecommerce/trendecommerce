@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+import secrets
 import socket
 from typing import Any, Dict, Optional, Tuple
 import requests
@@ -138,7 +139,10 @@ def supabase_sign_up(
     if not url or not key:
         return False, {"error": "Supabase não configurado"}
 
-    redirect_url = redirect_to or os.getenv("AUTH_REDIRECT_URL", "http://localhost:8000/login.html?verified=1")
+    redirect_url = redirect_to or os.getenv(
+        "AUTH_REDIRECT_URL",
+        "https://trendecommerce.onrender.com/app/login.html?verified=1",
+    )
     headers = {
         "apikey": key,
         "Content-Type": "application/json",
@@ -220,7 +224,10 @@ def supabase_resend_confirmation(email: str, redirect_to: Optional[str] = None) 
     if not url or not key:
         return False, "Supabase não configurado."
 
-    redirect_url = redirect_to or os.getenv("AUTH_REDIRECT_URL", "http://localhost:8000/login.html?verified=1")
+    redirect_url = redirect_to or os.getenv(
+        "AUTH_REDIRECT_URL",
+        "https://trendecommerce.onrender.com/app/login.html?verified=1",
+    )
     headers = {
         "apikey": key,
         "Content-Type": "application/json",
@@ -288,7 +295,10 @@ def supabase_send_password_recovery(email: str, redirect_to: Optional[str] = Non
     if not url or not key:
         return False, "Supabase não configurado."
 
-    redirect_url = redirect_to or os.getenv("AUTH_RESET_REDIRECT_URL", "http://localhost:8000/novasenha.html")
+    redirect_url = redirect_to or os.getenv(
+        "AUTH_RESET_REDIRECT_URL",
+        "https://trendecommerce.onrender.com/app/novasenha.html",
+    )
     headers = {
         "apikey": key,
         "Content-Type": "application/json",
@@ -306,12 +316,157 @@ def supabase_send_password_recovery(email: str, redirect_to: Optional[str] = Non
             timeout=6.0,
         )
         if resp.status_code in (200, 201, 204):
-            return True, "E-mail de recuperação enviado pelo Supabase! Verifique sua caixa de entrada e a pasta de spam/lixeira."
+            return True, "Código de recuperação enviado por e-mail! Verifique sua caixa de entrada e a pasta de spam/lixeira."
         data = resp.json() if resp.content else {}
         err_code = str(data.get("error_code") or "").lower()
-        if resp.status_code == 429 or "rate_limit" in err_code:
-            return False, "Limite temporário de envio do Supabase atingido (máx 3-4 por hora). Verifique a pasta de spam ou utilize o código de contingência."
-        msg = data.get("msg") or data.get("error_description") or data.get("message") or "Erro ao solicitar recuperação no Supabase."
-        return False, msg
+        err_msg_raw = str(data.get("msg") or data.get("error_description") or data.get("message") or "")
+        err_msg_lower = err_msg_raw.lower()
+        if (
+            resp.status_code == 429
+            or "rate_limit" in err_code
+            or "only request this after" in err_msg_lower
+            or "too many" in err_msg_lower
+        ):
+            return False, "Limite temporário de envio de e-mails atingido. Aguarde alguns instantes e tente novamente."
+        return False, "Não foi possível enviar o e-mail de recuperação agora. Tente novamente em instantes."
     except Exception as exc:
-        return False, f"Erro ao contatar Supabase: {exc}"
+        logger.warning(f"Erro ao contatar Supabase Auth em /recover: {exc}")
+        return False, "Erro ao contatar servidor de autenticação. Tente novamente em instantes."
+
+
+def supabase_ensure_auth_user_for_recovery(email: str, name: Optional[str] = None) -> str:
+    """Garante que uma conta local exista no Supabase Auth antes do fluxo de recuperação.
+
+    Retorna um status textual seguro para logs ('created', 'exists', 'rate_limited', 'skipped', 'failed')
+    sem expor senhas ou tokens.
+    """
+    url, key = get_supabase_config()
+    if not url or not key:
+        return "skipped"
+
+    email_clean = email.lower().strip()
+    display_name = name or email_clean.split("@")[0]
+    strong_temp_password = secrets.token_urlsafe(24) + "!Aa9"
+
+    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if service_role_key:
+        try:
+            resp = requests.post(
+                f"{url}/auth/v1/admin/users",
+                headers={
+                    "apikey": service_role_key,
+                    "Authorization": f"Bearer {service_role_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "email": email_clean,
+                    "password": strong_temp_password,
+                    "email_confirm": True,
+                    "user_metadata": {"name": display_name},
+                },
+                timeout=6.0,
+            )
+            if resp.status_code in (200, 201):
+                return "created"
+            data = resp.json() if resp.content else {}
+            err_text = str(data.get("msg") or data.get("error_code") or "").lower()
+            if "already" in err_text or "exists" in err_text or resp.status_code == 422:
+                return "exists"
+        except Exception as exc:
+            logger.debug(f"Admin API Supabase indisponível durante sincronização: {exc}")
+
+    ok, data = supabase_sign_up(email_clean, strong_temp_password, display_name)
+    if ok:
+        identities = data.get("identities")
+        if identities is None:
+            identities = (data.get("user") or {}).get("identities")
+        return "created" if identities else "exists"
+
+    err_code = str(data.get("error_code") or "").lower()
+    err_msg = str(data.get("msg") or data.get("error_description") or data.get("message") or "").lower()
+    if "already" in err_code or "exists" in err_code or "already" in err_msg:
+        return "exists"
+    if "rate_limit" in err_code or "too many" in err_msg:
+        return "rate_limited"
+    return "failed"
+
+
+def supabase_verify_recovery_otp(email: str, token: str) -> Tuple[bool, str, Optional[str]]:
+    """Valida o código OTP numérico de 6 dígitos enviado pelo Supabase Auth (/auth/v1/verify)."""
+    url, key = get_supabase_config()
+    if not url or not key:
+        return False, "Supabase não configurado.", None
+
+    headers = {
+        "apikey": key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "type": "recovery",
+        "email": email.lower().strip(),
+        "token": token.strip(),
+    }
+
+    try:
+        resp = requests.post(
+            f"{url}/auth/v1/verify",
+            headers=headers,
+            json=payload,
+            timeout=8.0,
+        )
+        data = resp.json() if resp.content else {}
+        if resp.status_code == 200 and data.get("access_token"):
+            return True, "ok", str(data["access_token"])
+
+        err_code = str(data.get("error_code") or "").lower()
+        err_msg = str(data.get("msg") or data.get("error_description") or data.get("message") or "").lower()
+
+        if resp.status_code == 429 or "rate_limit" in err_code or "too many" in err_msg:
+            return False, "Muitas tentativas consecutivas. Aguarde alguns minutos e tente novamente.", None
+
+        if (
+            "otp_expired" in err_code
+            or "otp" in err_code
+            or "expired" in err_msg
+            or "invalid" in err_msg
+            or resp.status_code in (400, 401, 403, 404, 422)
+        ):
+            return False, "Código de verificação incorreto ou expirado. Verifique o código de 6 dígitos enviado para seu e-mail.", None
+
+        return False, "Não foi possível validar o código de verificação no momento. Tente novamente.", None
+    except Exception as exc:
+        logger.warning(f"Erro ao validar OTP de recuperação no Supabase Auth: {exc}")
+        return False, "Erro de comunicação com o servidor de autenticação. Tente novamente em instantes.", None
+
+
+def supabase_update_auth_password(access_token: str, new_password: str) -> bool:
+    """Atualiza a senha no Supabase Auth usando o access_token retornado na verificação do OTP."""
+    url, key = get_supabase_config()
+    if not url or not key or not access_token:
+        return False
+
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "password": new_password,
+    }
+
+    try:
+        resp = requests.put(
+            f"{url}/auth/v1/user",
+            headers=headers,
+            json=payload,
+            timeout=8.0,
+        )
+        if resp.status_code in (200, 201, 204):
+            return True
+        data = resp.json() if resp.content else {}
+        err_code = data.get("error_code") or resp.status_code
+        logger.warning(f"Falha ao atualizar senha no Supabase Auth (código: {err_code}).")
+        return False
+    except Exception as exc:
+        logger.warning(f"Erro ao atualizar senha no Supabase Auth: {exc}")
+        return False

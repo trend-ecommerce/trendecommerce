@@ -281,23 +281,34 @@ textarea {
 }
 
 /* ==========================================
-   Código OTP (4 Dígitos)
+   Código OTP (6 Dígitos)
    ========================================== */
-.codigo-container {
+.codigo-subtitle {
     width: 100%;
     max-width: 300px;
+    margin: -2px 0 6px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: #A9B8C7;
+    text-align: center;
+}
+
+.codigo-container {
+    width: 100%;
+    max-width: 312px;
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: clamp(6px, 1.4vw, 10px);
-    margin: 8px 0 20px;
+    gap: clamp(5px, 1vw, 8px);
+    margin: 6px 0 18px;
 }
 
 .codigo-input {
-    flex: 0 1 46px;
-    width: 46px;
-    max-width: 46px;
-    height: 46px;
+    flex: 0 1 42px;
+    width: 42px;
+    max-width: 42px;
+    height: 42px;
+    aspect-ratio: 1 / 1;
     min-width: 0;
     margin: 0;
     padding: 0;
@@ -308,7 +319,7 @@ textarea {
     border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 36px;
     outline: none;
-    font-size: 20px;
+    font-size: 18px;
     text-align: center;
     transition: border-color 0.2s ease, transform 0.2s ease;
 }
@@ -557,15 +568,16 @@ textarea {
     }
 
     .codigo-container {
-        gap: 6px;
+        gap: 5px;
         margin-bottom: 14px;
         max-width: 100%;
     }
 
     .codigo-input {
-        width: 40px;
-        max-width: 42px;
-        height: 40px;
-        font-size: 17px;
+        flex: 0 1 38px;
+        width: 38px;
+        max-width: 38px;
+        height: 38px;
+        font-size: 16px;
     }
 }

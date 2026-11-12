@@ -190,10 +190,10 @@ class ApiService {
             });
         },
 
-        resetPassword: async (email, code, new_password) => {
+        resetPassword: async (email, reset_token, new_password) => {
             return await this.request('/auth/reset-password', {
                 method: 'POST',
-                body: JSON.stringify({ email, code, new_password })
+                body: JSON.stringify({ email, reset_token, new_password })
             });
         },
 

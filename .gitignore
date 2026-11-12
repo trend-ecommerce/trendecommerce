@@ -40,7 +40,6 @@ htmlcov/
 *.sqlite3
 data/*.db
 data/*.db.bak
-!data/initial_seed.json
 !data/catalog_500_products.json
 
 # Models

@@ -1,4 +1,4 @@
-"""Ponto de entrada da aplicação FastAPI - TrendCommerce."""
+"""Ponto de entrada da aplicação FastAPI - TrendEcommerce AI."""
 
 import uvicorn
 from src.api.main import app

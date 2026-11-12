@@ -6,17 +6,14 @@ numpy>=1.26.0
 
 # Banco de Dados & ORM
 sqlalchemy>=2.0.0
-alembic>=1.13.0
 psycopg2-binary>=2.9.0
 
 # API & Servidor Web
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
-python-multipart>=0.0.9
 
 # Segurança & Autenticação
 python-jose[cryptography]>=3.3.0
-passlib>=1.7.4
 bcrypt>=4.0.0
 email-validator>=2.0.0
 google-auth>=2.28.0
@@ -24,11 +21,8 @@ google-auth>=2.28.0
 # Utilitários & Requisições
 requests>=2.31.0
 httpx>=0.27.0
-aiohttp>=3.9.0
 python-dotenv>=1.0.0
 pydantic>=2.7.0
-pydantic-settings>=2.2.0
 
 # Testes
 pytest>=8.0.0
-pytest-asyncio>=0.23.0

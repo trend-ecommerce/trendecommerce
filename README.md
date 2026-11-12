@@ -11,7 +11,7 @@
     <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-0.110+-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI" /></a>
     <a href="https://xgboost.readthedocs.io/"><img src="https://img.shields.io/badge/XGBoost-2.0+-eb6024.svg" alt="XGBoost" /></a>
     <a href="https://www.sqlalchemy.org/"><img src="https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg" alt="SQLAlchemy" /></a>
-    <a href="tests/"><img src="https://img.shields.io/badge/Tests-50%20passed%20%7C%20100%25-brightgreen.svg" alt="Tests" /></a>
+    <a href="tests/"><img src="https://img.shields.io/badge/Tests-51%20passed%20%7C%20100%25-brightgreen.svg" alt="Tests" /></a>
   </p>
 
   <p>
@@ -32,13 +32,13 @@
 
 ## 📌 Visão Geral
 
-O **TrendEcommerce AI** é uma plataforma web fullstack voltada à previsão de demanda e inteligência comercial para e-commerce. O sistema conecta-se à **API de Histórico de Vendas** (composta por **500 produtos** distribuídos em **5 categorias** e **1.253.000 registros históricos diários**), combinando **engenharia de features temporais e estatísticas** com **Machine Learning (XGBoost)** para oferecer:
+O **TrendEcommerce AI** é uma plataforma web fullstack voltada à previsão de demanda e inteligência comercial para e-commerce. O sistema conecta-se à **API de Histórico de Vendas** e ao catálogo oficial versionado (`data/catalog_500_products.json`), reunindo **500 produtos** distribuídos em **5 categorias** e **1.263.000 registros históricos diários** (`2020-01-01` a `2026-11-30`), combinando **engenharia de features temporais e estatísticas** com **Machine Learning (XGBoost)** para oferecer:
 
 - **Projeções de demanda futura e Linha do Tempo Híbrida** para horizontes de **7, 14 e 30 dias** combinados a janelas históricas de **1 mês, 6 meses, 1 ano e 5 anos**, com intervalos de confiança (`confidence_min` / `confidence_max`), estimativa de faturamento e cálculo de estoque de segurança recomendado.
 - **Explicabilidade de Inteligência Artificial (XAI)** calculada dinamicamente a partir do *gain* real das árvores do XGBoost, detalhando o peso percentual e o impacto de cada fator determinante da previsão (*Média Recente*, *Tendência de Mercado*, *Sazonalidade Semanal* e *Competitividade*).
 - **Busca Inteligente com Similaridade de Caracteres (Fuzzy Search)** no catálogo oficial, sugerindo produtos cadastrados mesmo quando o usuário digita termos com erros de grafia e informando claramente quando um produto não existe no catálogo.
 - **Rankings Preditivos orientados pelo Índice de Tração Preditiva (PTI)** (*Top 7 Geral* com equilíbrio setorial e *Top 5 por Categoria*), **Matriz de Oportunidades Comerciais (POI)** e **Exportação Executiva de Relatórios em `.CSV` (Excel)**.
-- **Autenticação Completa e Segura** com JWT, integração com **Supabase Auth**, **Google Identity Services (OAuth / OTP)** e envio de códigos de verificação por e-mail via **SMTP Gmail**.
+- **Autenticação Completa e Segura** com JWT e integração ao **Supabase Auth** (incluindo fluxo de recuperação de senha com **código OTP numérico de 6 dígitos** enviado via **Supabase Auth**).
 
 ---
 
@@ -46,7 +46,7 @@ O **TrendEcommerce AI** é uma plataforma web fullstack voltada à previsão de 
 
 ### 🧠 1. Motor Preditivo de Machine Learning (`src/ml/`)
 - **Previsões para 7, 14 e 30 Dias e Linha do Tempo Híbrida (`FutureForecaster`)**: Projeção diária autoregressiva de demanda e receita para qualquer produto do catálogo, com carregamento otimizado do artefato pré-treinado (`models/xgboost_demand_v1.json`, `<80MB RAM`) no startup do servidor e cache em memória para respostas instantâneas (`<30ms`).
-- **Pipeline de Treinamento de Baixa Memória (`train_pipeline.py`)**: Treinamento do `XGBRegressor` (100 árvores, `max_depth=5`, `learning_rate=0.08`, `R² ≈ 0.986` em teste) sobre os 1,25M de registros históricos com *downcasting* numérico (`float32`).
+- **Pipeline de Treinamento de Baixa Memória (`train_pipeline.py`)**: Treinamento do `XGBRegressor` (100 árvores, `max_depth=5`, `learning_rate=0.08`, `R² ≈ 0.986` em teste) sobre os 1.263.000 registros históricos com *downcasting* numérico (`float32`).
 - **Intervalos de Confiança e Estoque Recomendado (`DemandPredictor`)**: Cálculo dinâmico de limites inferior e superior e recomendação automática de buffer de estoque.
 - **Explicabilidade Dinâmica da IA (XAI)**: Decomposição transparente de cada previsão em 4 pilares calculados a partir da importância real (`gain`) das features do modelo XGBoost:
   1. *Média Recente (~52%)*: Base orientada pelos volumes e médias móveis de 7 e 30 dias.
@@ -57,9 +57,9 @@ O **TrendEcommerce AI** é uma plataforma web fullstack voltada à previsão de 
 - **Auditoria e Recomendações (`DemandComparator` & `OpportunityRecommender`)**: Validação histórica (*backtesting* Real vs. Previsto com `RMSE`, `MAE`, `MAPE` e `R²`) e classificação de produtos em quadrantes estratégicos (`OPORTUNIDADE_EXPLOSIVA`, `ALTA_RENTABILIDADE`, `DEMANDA_MODERADA`, `BAIXA_PRIORIDADE`).
 
 ### 📦 2. Integração com a API de Histórico de Vendas (`VendasApiClient`)
-- **Catálogo Oficial**: 500 produtos ativos em 5 categorias (*Eletrônicos*, *Moda e acessórios*, *Casa e decoração*, *Esportes e fitness*, *Beleza e cuidados pessoais*) e 1.253.000 registros de vendas históricas (2020 a 2026).
-- **Duplo Canal de Operação (HTTP + SQLite `ATTACH DATABASE`)**: Consome a API externa em `http://127.0.0.1:8001` e realiza sincronização em lote de alta velocidade diretamente a partir do arquivo `historico_vendas.db` caso o servidor externo não esteja em execução.
-- **Auto-Seed no Startup (`seed_loader.py`)**: Ao iniciar a aplicação, o sistema verifica automaticamente se o banco local (`data/trendcommerce_dev.db`) está vazio ou desatualizado e sincroniza todos os produtos e séries temporais da API oficial.
+- **Catálogo Oficial**: 500 produtos ativos em 5 categorias (*Eletrônicos*, *Moda e acessórios*, *Casa e decoração*, *Esportes e fitness*, *Beleza e cuidados pessoais*) documentados em `data/catalog_500_products.json` e **1.263.000 registros** de vendas históricas (`2020-01-01` a `2026-11-30`).
+- **Duplo Canal de Operação (HTTP + SQLite `ATTACH DATABASE`)**: Consome a API externa em `http://127.0.0.1:8001`, realiza sincronização em lote de alta velocidade diretamente a partir do arquivo `historico_vendas.db` quando disponível localmente e reconstrói deterministicamente todas as séries a partir de `data/catalog_500_products.json` em ambientes de nuvem (como Render).
+- **Auto-Seed e Calibragem no Startup (`seed_loader.py`)**: Ao iniciar a aplicação, o sistema verifica automaticamente se os bancos possuem os 500 produtos oficiais e as assinaturas históricas calibradas (`2020-01-01` a `2026-11-30`), executando a sincronização/recalibragem determinística quando necessário.
 - **Busca por Similaridade de Caracteres (`search_catalog_products`)**: Utiliza normalização Unicode e `difflib.SequenceMatcher` para recomendar produtos cadastrados com grafia parecida (ex.: `notbook` → *Notebook*, `cretina` → *Creatina*) e bloqueia termos inválidos/inexistentes com mensagem clara de produto não encontrado.
 
 ### 🔬 3. Engenharia de Features (`FeatureEngineer`)
@@ -77,7 +77,7 @@ Interface construída em **HTML5**, **CSS3 (Glassmorphism / Cyberpunk UI)** e **
 - **IA Preditiva (`ia-preditiva.html` / `ia-preditiva.js`)**: Painel principal com gráfico interativo em Canvas para Linha do Tempo Híbrida (histórico passado de **1m, 6m, 1y, 5y** + projeções futuras de **7, 14 e 30 dias**), filtro por categoria, **Top 5 Produtos Mais Vendidos no Mês** e modal de **Exportação Executiva para Excel (`.CSV`)**.
 - **Ranking de Produtos (`ranking.html` / `ranking.js`)**: Exibição do **Top 7 Produtos no Geral** e **Top 5 por Categoria** para os próximos 30 dias baseados no **Índice de Tração Preditiva (PTI)**, com **Modal de Explicabilidade (XAI)** ao clicar em qualquer item do ranking.
 - **Análise Específica (`analise-especifica.html` / `analise-especifica.js`)**: Busca inteligente com autocomplete e tolerância a erros de digitação, cards de KPIs preditivos (Unidades Previstas, Faturamento Projetado, Média Diária e Estoque de Segurança), gráfico diário interativo e **Painel XAI completo** com os 4 fatores determinantes.
-- **Autenticação Completa (`login.html`, `cadastro.html`, `recuperar-senha.html` / `recuperarsenha.html`, `codigo-verificacao.html` / `codigosenha.html`, `nova-senha.html` / `novasenha.html`)**: Fluxo de login tradicional, login com Google, confirmação de e-mail e redefinição de senha via código OTP.
+- **Autenticação Completa (`login.html`, `cadastro.html`, `recuperarsenha.html`, `codigosenha.html`, `novasenha.html`)**: Fluxo de login por e-mail e senha, cadastro integrado ao **Supabase Auth** e recuperação de senha via **código OTP numérico de 6 dígitos** emitido e validado pelo Supabase Auth.
 
 ---
 
@@ -86,7 +86,7 @@ Interface construída em **HTML5**, **CSS3 (Glassmorphism / Cyberpunk UI)** e **
 ```text
                     ┌───────────────────────────────────────────────┐
                     │          API de Histórico de Vendas           │
-                    │  (500 Produtos | 5 Categorias | 1.25M Vendas) │
+                    │ (500 Produtos | 5 Categorias | 1.263M Vendas) │
                     └───────────────────────┬───────────────────────┘
                                             │
                                             ▼
@@ -115,7 +115,7 @@ Interface construída em **HTML5**, **CSS3 (Glassmorphism / Cyberpunk UI)** e **
                                             ▼
                     ┌───────────────────────────────────────────────┐
                     │           API REST FastAPI (/api/v1)          │
-                    │  - /auth (JWT, Google OAuth, Supabase, OTP)   │
+                    │  - /auth (JWT, Supabase Auth, OTP 6 dígitos)  │
                     │  - /products (Catálogo, Top Sales, Fuzzy)     │
                     │  - /forecast (Predict, Timeline, Ranking, Cmp)│
                     │  - /recommendations (Top Products POI)        │
@@ -136,58 +136,55 @@ Interface construída em **HTML5**, **CSS3 (Glassmorphism / Cyberpunk UI)** e **
 
 ```text
 trendecommerce/
-├── config/
-│   └── settings.py                        # Configurações globais (Pydantic Settings)
 ├── data/
+│   ├── catalog_500_products.json          # Metadados oficiais dos 500 produtos versionados para seed/Render
 │   └── trendcommerce_dev.db               # Banco de dados SQLite local (gerado automaticamente)
 ├── frontend/                              # Aplicação Web Frontend (HTML5, CSS3 e Vanilla JS)
 │   ├── assets/                            # Imagens de fundo (bg-logins.png) e logotipo (logo.png)
 │   ├── img/
 │   │   └── banner.png                     # Banner oficial do TrendEcommerce AI
 │   ├── css/
-│   │   ├── login.css                      # Estilos das páginas de autenticação
+│   │   ├── login.css                      # Estilos das páginas de autenticação e inputs OTP de 6 dígitos
 │   │   └── style.css                      # Estilos do dashboard, modais e componentes
 │   ├── js/
 │   │   ├── analise-especifica.js          # Busca inteligente no catálogo, KPIs, gráfico e painel XAI
 │   │   ├── api.js                         # Cliente HTTP centralizado para consumo de /api/v1
-│   │   ├── auth.js                        # Autenticação JWT, Google OAuth, OTP e validação de sessão
+│   │   ├── auth.js                        # Autenticação JWT, recuperação OTP de 6 dígitos e validação de sessão
 │   │   ├── effects.js                     # Efeitos visuais de interface
 │   │   ├── ia-preditiva.js                # Linha do tempo híbrida (1m..5y + 7/14/30d), Top 5 e exportação CSV
 │   │   ├── ranking.js                     # Top 7 geral, Top 5 por categoria e modal XAI
 │   │   └── sidebar.js                     # Barra de navegação lateral e controle de usuário
 │   ├── analise-especifica.html            # Página de Análise Específica por Produto
 │   ├── cadastro.html                      # Página de Cadastro de Usuário
-│   ├── codigo-verificacao.html            # Página de Confirmação de Código OTP
-│   ├── codigosenha.html                   # Etapa de código OTP na recuperação de senha
+│   ├── codigosenha.html                   # Etapa de código OTP de 6 dígitos na recuperação de senha
 │   ├── ia-preditiva.html                  # Página Principal (IA Preditiva & Relatório Executivo)
-│   ├── index.html                         # Ponto de entrada do Frontend
+│   ├── index.html                         # Ponto de entrada do Frontend (tela inicial / login)
 │   ├── login.html                         # Página de Login
-│   ├── nova-senha.html / novasenha.html   # Página de Redefinição de Senha
+│   ├── novasenha.html                     # Página de Redefinição de Senha (ticket único)
 │   ├── ranking.html                       # Página de Ranking Preditivo de Produtos
-│   ├── recuperar-senha.html / recuperarsenha.html # Solicitação de Recuperação de Senha
-│   ├── script.js                          # Controlador de fluxos de autenticação das telas de login
-│   └── server.py                          # Servidor HTTP auxiliar opcional para o frontend
+│   ├── readme.md                          # Documentação das telas de autenticação do Frontend
+│   └── recuperarsenha.html                # Solicitação de Recuperação de Senha
 ├── models/                                # Artefatos pré-treinados do modelo XGBoost
 │   ├── features_metadata.json             # Metadados das 23 features, hiperparâmetros e métricas (R² 0.986)
 │   └── xgboost_demand_v1.json             # Modelo XGBRegressor serializado para inferência rápida (<80MB RAM)
 ├── scripts/
-│   └── update_historical_data_to_nov30.py # Script de recalibração sazonal e sincronização histórica (2020-2026)
+│   └── update_historical_data_to_nov30.py # Recalibragem determinística e sincronização histórica (2020-2026)
 ├── src/
 │   ├── api/                               # Aplicação FastAPI e Rotas REST
 │   │   ├── routers/
-│   │   │   ├── auth_router.py             # Login, Cadastro, Google OAuth, Verificação de E-mail e OTP
+│   │   │   ├── auth_router.py             # Login, Cadastro e Recuperação de Senha (OTP 6 dígitos Supabase)
 │   │   │   ├── forecast_router.py         # Previsões XGBoost, Timeline Híbrida, Resumo, Ranking e Comparador
 │   │   │   ├── opportunity_router.py      # Recomendações de produtos e Matriz de Oportunidades (POI)
 │   │   │   └── products_router.py         # Catálogo, Top Vendas, Autocomplete Fuzzy e Sincronização
 │   │   ├── services/
-│   │   │   ├── email_service.py           # Envio de e-mails transacionais e códigos OTP via SMTP
-│   │   │   └── supabase_service.py        # Sincronização e validação de usuários com Supabase Auth
+│   │   │   ├── email_service.py           # Utilitário SMTP opcional (não utilizado na recuperação Supabase)
+│   │   │   └── supabase_service.py        # Integração Supabase Auth (signup, recover, verify OTP e update user)
 │   │   ├── dependencies.py                # Sessão de banco, segurança JWT/Bcrypt e warmup do XGBoost
 │   │   └── main.py                        # Configuração do FastAPI, CORS, lifespan e montagem do /app
 │   ├── database/                          # Persistência e ORM (SQLAlchemy)
 │   │   ├── connection.py                  # Gerenciador de conexões e sessões (SQLite / PostgreSQL)
 │   │   ├── models.py                      # Modelos ORM: User, Product e SalesHistory
-│   │   ├── seed_loader.py                 # Auto-sincronização inicial com a API de Vendas
+│   │   ├── seed_loader.py                 # Auto-sincronização e verificação de calibragem (500 produtos / 2020-2026)
 │   │   └── setup.py                       # CLI de gerenciamento do banco (create, drop, seed, sync, status, reset)
 │   ├── features/
 │   │   └── feature_engineering.py         # Sanitização de séries e criação de features de vendas, preços e temporais
@@ -203,14 +200,12 @@ trendecommerce/
 │   │   ├── auth_schema.py
 │   │   ├── forecast_schema.py
 │   │   └── product_schema.py
-│   └── services/                          # Serviços de Negócio e Integração
-│       ├── forecast_service.py            # Orquestração de treinamento e relatórios de previsão
-│       ├── recommendation_service.py      # Serviço de recomendações comerciais
+│   └── services/
 │       └── vendas_api_client.py           # Cliente HTTP e sincronizador SQLite da API de Histórico de Vendas
-├── tests/                                 # Suíte de Testes Automatizados (Pytest - 50 testes)
+├── tests/                                 # Suíte de Testes Automatizados (Pytest - 51 testes)
 │   ├── conftest.py                        # Fixtures compartilhadas de vendas e produtos
 │   ├── test_acceptance_e2e.py             # Testes E2E de aceitação (jornadas CA-01 a CA-05)
-│   ├── test_api.py                        # Testes de rotas REST, autenticação, busca fuzzy, timeline e previsão
+│   ├── test_api.py                        # Testes de rotas REST, autenticação, OTP 6 dígitos, busca fuzzy e previsão
 │   ├── test_comparator.py                 # Testes de validação e backtesting
 │   ├── test_feature_engineering.py        # Testes de geração de features de vendas e temporais
 │   ├── test_integration_system.py         # Testes de integração de ponta a ponta entre módulos
@@ -261,7 +256,7 @@ pip install -r requirements.txt
 ```
 
 ### 4. Variáveis de Ambiente (`.env`)
-O projeto já funciona localmente por padrão utilizando SQLite (`data/trendcommerce_dev.db`). Para configurar credenciais de e-mail SMTP, Google OAuth ou Supabase, copie o arquivo `.env.example` para `.env`:
+O projeto já funciona localmente por padrão utilizando SQLite (`data/trendcommerce_dev.db`). Para configurar credenciais do Supabase e links de redirecionamento, copie o arquivo `.env.example` para `.env`:
 
 ```powershell
 copy .env.example .env
@@ -280,16 +275,11 @@ DATABASE_URL=sqlite:///data/trendcommerce_dev.db
 # Microserviço API de Histórico de Vendas
 VENDAS_API_URL=http://127.0.0.1:8001
 
-# Serviço de Envio de E-mail (Recuperação de senha e OTP via SMTP Gmail)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_USER=trendeccomerceai@gmail.com
-SMTP_PASSWORD=sua-senha-de-app-gerada-no-google
-
-# Google Identity Services & Supabase
-GOOGLE_CLIENT_ID=seu_client_id.apps.googleusercontent.com
+# Supabase (Autenticação & Recuperação de Senha com OTP de 6 dígitos)
 SUPABASE_URL=https://seu-projeto.supabase.co
 SUPABASE_ANON_KEY=sua_chave_anon_supabase
+AUTH_REDIRECT_URL=https://trendecommerce.onrender.com/app/login.html?verified=1
+AUTH_RESET_REDIRECT_URL=https://trendecommerce.onrender.com/app/novasenha.html
 ```
 
 ---
@@ -304,7 +294,7 @@ No Windows, você pode iniciar o servidor da API de Histórico de Vendas executa
 - **Swagger da API de Vendas:** `http://127.0.0.1:8001/docs`
 - **Health Check:** `http://127.0.0.1:8001/health`
 
-> **Nota:** Caso o executável da porta `8001` não esteja aberto, o `VendasApiClient` localiza automaticamente o arquivo `historico_vendas.db` e sincroniza os **500 produtos** e **1.253.000 registros de vendas** diretamente para o banco local.
+> **Nota:** Caso o executável da porta `8001` não esteja aberto, o `VendasApiClient` e o `SeedLoader` localizam automaticamente o arquivo `historico_vendas.db` ou utilizam `data/catalog_500_products.json` para sincronizar os **500 produtos** e **1.263.000 registros de vendas** (`2020-01-01` a `2026-11-30`).
 
 ### Passo 2: Iniciar o Servidor Principal TrendEcommerce AI (Porta 8000)
 ```powershell
@@ -354,9 +344,9 @@ python -m src.ml.train_pipeline
 | `POST` | `/api/v1/auth/google/request-code` | Solicita código OTP por e-mail para validação de conta Google |
 | `POST` | `/api/v1/auth/google/verify-code` | Valida código OTP do Google e retorna token JWT |
 | `GET` | `/api/v1/auth/me` | Retorna os dados do perfil do usuário autenticado |
-| `POST` | `/api/v1/auth/forgot-password` | Gera e envia código OTP de 4 dígitos para recuperação de senha |
-| `POST` | `/api/v1/auth/verify-reset-code` | Valida o código OTP de recuperação antes da redefinição de senha |
-| `POST` | `/api/v1/auth/reset-password` | Redefine a senha do usuário validando o código OTP |
+| `POST` | `/api/v1/auth/forgot-password` | Solicita ao Supabase Auth o envio do código OTP de 6 dígitos para recuperação de senha |
+| `POST` | `/api/v1/auth/verify-reset-code` | Valida o código OTP de 6 dígitos no Supabase Auth e emite um `reset_token` temporário |
+| `POST` | `/api/v1/auth/reset-password` | Redefine a senha (local e Supabase Auth) usando o `reset_token` único |
 | **Produtos & Catálogo (`/api/v1/products`)** | | |
 | `GET` | `/api/v1/products` | Lista paginada de produtos com filtros de busca, categoria e plataforma |
 | `POST` | `/api/v1/products` | Cadastra um novo produto no catálogo |
@@ -386,7 +376,7 @@ python -m src.ml.train_pipeline
 
 ## 🧪 Qualidade e Testes
 
-A suíte de testes automatizados utiliza **Pytest** e cobre testes unitários, de integração e de aceitação (E2E): autenticação (login, registro, Google OAuth, OTP e recuperação de senha), rotas de catálogo, busca por similaridade de caracteres, linha do tempo híbrida (`1m`, `6m`, `1y`, `5y`), engenharia de features, treinamento/inferência do modelo XGBoost, backtesting (`DemandComparator`) e recomendação de oportunidades (`OpportunityRecommender`).
+A suíte de testes automatizados utiliza **Pytest** e cobre testes unitários, de integração e de aceitação (E2E): autenticação (login, registro, OTP de 6 dígitos via Supabase Auth e recuperação de senha com `reset_token`), rotas de catálogo, busca por similaridade de caracteres, linha do tempo híbrida (`1m`, `6m`, `1y`, `5y`), engenharia de features, treinamento/inferência do modelo XGBoost, backtesting (`DemandComparator`) e recomendação de oportunidades (`OpportunityRecommender`).
 
 Para executar todos os testes:
 ```powershell
@@ -395,7 +385,7 @@ pytest -v
 
 Status atual da suíte:
 ```text
-======================= 50 passed in 26.15s =======================
+======================= 51 passed in 24.98s =======================
 ```
 
 ---

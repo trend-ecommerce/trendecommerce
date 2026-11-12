@@ -99,43 +99,181 @@ def test_auth_register_duplicate(client):
     assert response.status_code == 400
 
 
-def test_auth_forgot_and_reset_password(client):
-    """Testa fluxo de recuperacao de senha com codigo OTP."""
+def test_auth_forgot_and_reset_password(client, monkeypatch):
+    """Testa fluxo completo de recuperacao de senha com OTP de 6 digitos do Supabase e ticket temporario."""
+    import importlib
+    auth_router = importlib.import_module("src.api.routers.auth_router")
+
+    recovery_calls = []
+    pw_update_calls = []
+
+    monkeypatch.setattr(auth_router, "supabase_ensure_auth_user_for_recovery", lambda email, name=None: "exists")
+
+    def fake_send_recovery(email, redirect_to=None):
+        recovery_calls.append(email)
+        return True, "Código enviado!"
+
+    def fake_verify_otp(email, token):
+        if email == "admin@trendecommerce.com" and token == "654321":
+            return True, "ok", "sb_recovery_access_token_xyz"
+        return False, "Código de verificação incorreto ou expirado.", None
+
+    def fake_update_sb_pw(access_token, new_password):
+        pw_update_calls.append((access_token, new_password))
+        return True
+
+    monkeypatch.setattr(auth_router, "supabase_send_password_recovery", fake_send_recovery)
+    monkeypatch.setattr(auth_router, "supabase_verify_recovery_otp", fake_verify_otp)
+    monkeypatch.setattr(auth_router, "supabase_update_auth_password", fake_update_sb_pw)
+    monkeypatch.setattr(auth_router, "supabase_sync_user_row", lambda *args, **kwargs: True)
+
+    # 0. Email nao cadastrado deve retornar 404
+    not_found_resp = client.post("/api/v1/auth/forgot-password", json={
+        "email": "naoexiste.usuario.xyz@gmail.com"
+    })
+    assert not_found_resp.status_code == 404
+
+    # 1. Solicitar envio via Supabase Auth
     req_resp = client.post("/api/v1/auth/forgot-password", json={
         "email": "admin@trendecommerce.com"
     })
     assert req_resp.status_code == 200
     assert req_resp.json()["success"] is True
+    assert "admin@trendecommerce.com" in recovery_calls
 
-    # 1. Validar codigo incorreto
-    err_verify = client.post("/api/v1/auth/verify-reset-code", json={
-        "email": "admin@trendecommerce.com",
-        "code": "0000"
-    })
-    assert err_verify.status_code == 400
-
-    # 2. Validar codigo correto / fallback aceito
-    ok_verify = client.post("/api/v1/auth/verify-reset-code", json={
+    # 2. Codigo mestre antigo '1234' deve ser rejeitado (422 pelo schema de 6 digitos)
+    legacy_verify = client.post("/api/v1/auth/verify-reset-code", json={
         "email": "admin@trendecommerce.com",
         "code": "1234"
     })
-    assert ok_verify.status_code == 200
-    assert ok_verify.json()["success"] is True
+    assert legacy_verify.status_code == 422
 
-    # 3. Redefinir senha com sucesso
+    # 3. Codigo incorreto de 6 digitos deve retornar 400
+    err_verify = client.post("/api/v1/auth/verify-reset-code", json={
+        "email": "admin@trendecommerce.com",
+        "code": "000000"
+    })
+    assert err_verify.status_code == 400
+
+    # 4. Codigo correto de 6 digitos deve retornar ticket temporario (reset_token)
+    ok_verify = client.post("/api/v1/auth/verify-reset-code", json={
+        "email": "admin@trendecommerce.com",
+        "code": "654321"
+    })
+    assert ok_verify.status_code == 200
+    verify_data = ok_verify.json()
+    assert verify_data["success"] is True
+    reset_token = verify_data.get("reset_token")
+    assert reset_token and len(reset_token) >= 20
+
+    # 5. Tentativa de reset com '1234' ou ticket invalido deve ser bloqueada (400)
+    bad_reset = client.post("/api/v1/auth/reset-password", json={
+        "email": "admin@trendecommerce.com",
+        "reset_token": "1234",
+        "new_password": "novasenhaforte123"
+    })
+    assert bad_reset.status_code == 400
+
+    # 6. Redefinir senha com ticket valido
     reset_resp = client.post("/api/v1/auth/reset-password", json={
         "email": "admin@trendecommerce.com",
-        "code": "1234",
+        "reset_token": reset_token,
         "new_password": "novasenhaforte123"
     })
     assert reset_resp.status_code == 200
+    assert ("sb_recovery_access_token_xyz", "novasenhaforte123") in pw_update_calls
 
-    # Restaurar senha admin
-    client.post("/api/v1/auth/reset-password", json={
+    # 7. Ticket nao pode ser reutilizado (uso unico)
+    reuse_resp = client.post("/api/v1/auth/reset-password", json={
         "email": "admin@trendecommerce.com",
-        "code": "1234",
+        "reset_token": reset_token,
+        "new_password": "outrasenhaforte123"
+    })
+    assert reuse_resp.status_code == 400
+
+    # 8. Validar login com a nova senha
+    login_new = client.post("/api/v1/auth/login", json={
+        "email": "admin@trendecommerce.com",
+        "password": "novasenhaforte123"
+    })
+    assert login_new.status_code == 200
+
+    # 9. Restaurar senha admin para os testes subsequentes usando novo ticket
+    restore_verify = client.post("/api/v1/auth/verify-reset-code", json={
+        "email": "admin@trendecommerce.com",
+        "code": "654321"
+    })
+    assert restore_verify.status_code == 200
+    restore_token = restore_verify.json()["reset_token"]
+    restore_resp = client.post("/api/v1/auth/reset-password", json={
+        "email": "admin@trendecommerce.com",
+        "code": restore_token,
         "new_password": "admin123"
     })
+    assert restore_resp.status_code == 200
+
+    # 10. Rate limit do Supabase no envio deve retornar HTTP 429 com mensagem em portugues
+    monkeypatch.setattr(
+        auth_router,
+        "supabase_send_password_recovery",
+        lambda email, redirect_to=None: (False, "Limite temporário de envio de e-mails atingido."),
+    )
+    rl_resp = client.post("/api/v1/auth/forgot-password", json={"email": "admin@trendecommerce.com"})
+    assert rl_resp.status_code == 429
+    assert "limite" in rl_resp.json()["detail"].lower()
+
+
+def test_supabase_recovery_service_helpers(monkeypatch):
+    """Testa helpers de verificacao OTP e atualizacao de senha no supabase_service."""
+    from src.api.services import supabase_service
+
+    class FakeResp:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+            self.content = b"json" if payload is not None else b""
+
+        def json(self):
+            return self._payload
+
+    captured = []
+
+    def fake_post(url, headers=None, json=None, params=None, timeout=None):
+        captured.append(("POST", url, headers, json, params))
+        if url.endswith("/auth/v1/verify"):
+            if json.get("token") == "654321":
+                return FakeResp(200, {"access_token": "tok_abc"})
+            return FakeResp(403, {"error_code": "otp_expired", "msg": "Token has expired or is invalid"})
+        if url.endswith("/auth/v1/recover"):
+            return FakeResp(429, {"error_code": "over_email_send_rate_limit", "msg": "rate limit"})
+        return FakeResp(200, {})
+
+    def fake_put(url, headers=None, json=None, timeout=None):
+        captured.append(("PUT", url, headers, json, None))
+        return FakeResp(200, {"id": "user-1"})
+
+    monkeypatch.setattr(supabase_service.requests, "post", fake_post)
+    monkeypatch.setattr(supabase_service.requests, "put", fake_put)
+    monkeypatch.delenv("AUTH_RESET_REDIRECT_URL", raising=False)
+
+    ok, msg, token = supabase_service.supabase_verify_recovery_otp("user@gmail.com", "654321")
+    assert ok is True
+    assert msg == "ok"
+    assert token == "tok_abc"
+
+    bad_ok, bad_msg, bad_tok = supabase_service.supabase_verify_recovery_otp("user@gmail.com", "000000")
+    assert bad_ok is False
+    assert "6 dígitos" in bad_msg
+    assert bad_tok is None
+
+    assert supabase_service.supabase_update_auth_password("tok_abc", "NewPass#123") is True
+    assert any(c[0] == "PUT" and c[1].endswith("/auth/v1/user") and c[2]["Authorization"] == "Bearer tok_abc" for c in captured)
+
+    rec_ok, rec_msg = supabase_service.supabase_send_password_recovery("user@gmail.com")
+    assert rec_ok is False
+    assert "limite" in rec_msg.lower()
+    recover_calls = [c for c in captured if c[1].endswith("/auth/v1/recover")]
+    assert recover_calls[0][4]["redirect_to"] == "https://trendecommerce.onrender.com/app/novasenha.html"
 
 
 def test_products_list_and_categories(client):
@@ -302,6 +440,8 @@ def test_send_otp_email_service(monkeypatch):
     assert "NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM" in decoded_body
     assert "7412" in decoded_body
     assert "trendecommerce_logo" in msg_str
+    assert "TrendEcommerce AI" in decoded_body
+    assert "TrendCommerce AI" not in decoded_body
 
 
 def test_products_autocomplete(client):

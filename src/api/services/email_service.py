@@ -24,7 +24,7 @@ def send_otp_email(to_email: str, code: str) -> tuple[bool, str]:
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
     smtp_user = os.getenv("SMTP_USER", "trendeccomerceai@gmail.com").strip()
     smtp_password = os.getenv("SMTP_PASSWORD", "").replace(" ", "").strip()
-    from_name = os.getenv("EMAIL_FROM_NAME", "TrendCommerce AI").strip()
+    from_name = os.getenv("EMAIL_FROM_NAME", "TrendEcommerce AI").strip()
 
     if not smtp_password:
         logger.warning(
@@ -36,7 +36,7 @@ def send_otp_email(to_email: str, code: str) -> tuple[bool, str]:
     try:
         # Container principal com suporte a imagem incorporada (CID)
         msg_root = MIMEMultipart("related")
-        msg_root["Subject"] = f"🔐 {code} é o seu código de recuperação — TrendCommerce AI"
+        msg_root["Subject"] = f"🔐 {code} é o seu código de recuperação — TrendEcommerce AI"
         msg_root["From"] = f"{from_name} <{smtp_user}>"
         msg_root["To"] = to_email
         msg_root["Date"] = formatdate(localtime=True)
@@ -47,19 +47,19 @@ def send_otp_email(to_email: str, code: str) -> tuple[bool, str]:
         msg_root.attach(msg_alternative)
 
         # Versão Texto Puro
-        text_content = f"""TrendCommerce AI - Recuperação de Senha
+        text_content = f"""TrendEcommerce AI - Recuperação de Senha
 
 Seu código de verificação é: {code}
 
 ⚠️ ATENÇÃO DE SEGURANÇA:
 NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM.
 Este código é estritamente pessoal, confidencial e intransferível.
-A equipe do TrendCommerce AI NUNCA entrará em contato para solicitar seu código ou sua senha.
+A equipe do TrendEcommerce AI NUNCA entrará em contato para solicitar seu código ou sua senha.
 
 ⏱️ Este código expira em 15 minutos.
 Se você não solicitou a recuperação de senha, nenhuma ação é necessária.
 
-© 2026 TrendCommerce AI — Inteligência Preditiva de Mercado
+© 2026 TrendEcommerce AI — Inteligência Preditiva de Mercado
 """
 
         
@@ -69,7 +69,7 @@ Se você não solicitou a recuperação de senha, nenhuma ação é necessária.
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Recuperação de Senha - TrendCommerce AI</title>
+    <title>Recuperação de Senha - TrendEcommerce AI</title>
     <style>
         body {{
             margin: 0;
@@ -194,9 +194,9 @@ Se você não solicitou a recuperação de senha, nenhuma ação é necessária.
         <div class="container">
             <div class="header">
                 <div>
-                    <img class="logo-img" src="cid:trendecommerce_logo" alt="TrendCommerce AI Logo" />
+                    <img class="logo-img" src="cid:trendecommerce_logo" alt="TrendEcommerce AI Logo" />
                 </div>
-                <h1 class="logo-title"><span class="logo-accent">Trend</span>Commerce AI</h1>
+                <h1 class="logo-title"><span class="logo-accent">Trend</span>Ecommerce AI</h1>
                 <div class="subtitle">SISTEMA PREDITIVO DE VENDAS E DADOS</div>
             </div>
 
@@ -215,13 +215,13 @@ Se você não solicitou a recuperação de senha, nenhuma ação é necessária.
                 <div class="security-title">⚠️ NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM</div>
                 <p class="security-text">
                     Este código é <strong>estritamente pessoal, confidencial e intransferível</strong>. 
-                    A equipe do <strong>TrendCommerce AI</strong> nunca entrará em contato solicitando seu código de recuperação ou sua senha. Se alguém solicitar este código, não informe.
+                    A equipe do <strong>TrendEcommerce AI</strong> nunca entrará em contato solicitando seu código de recuperação ou sua senha. Se alguém solicitar este código, não informe.
                 </p>
             </div>
 
             <div class="footer">
                 <p>Se você não solicitou a redefinição de senha, desconsidere esta mensagem. Sua conta permanece totalmente protegida.</p>
-                <p>© 2026 TrendCommerce AI — Inteligência Preditiva de Mercado</p>
+                <p>© 2026 TrendEcommerce AI — Inteligência Preditiva de Mercado</p>
             </div>
         </div>
     </div>
@@ -296,7 +296,7 @@ def send_google_verification_email(to_email: str, code: str) -> tuple[bool, str]
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
     smtp_user = os.getenv("SMTP_USER", "trendeccomerceai@gmail.com").strip()
     smtp_password = os.getenv("SMTP_PASSWORD", "").replace(" ", "").strip()
-    from_name = os.getenv("EMAIL_FROM_NAME", "TrendCommerce AI").strip()
+    from_name = os.getenv("EMAIL_FROM_NAME", "TrendEcommerce AI").strip()
 
     if not smtp_password:
         logger.warning(
@@ -306,7 +306,7 @@ def send_google_verification_email(to_email: str, code: str) -> tuple[bool, str]
 
     try:
         msg_root = MIMEMultipart("related")
-        msg_root["Subject"] = f"🔐 {code} é o seu código de verificação Google — TrendCommerce AI"
+        msg_root["Subject"] = f"🔐 {code} é o seu código de verificação Google — TrendEcommerce AI"
         msg_root["From"] = f"{from_name} <{smtp_user}>"
         msg_root["To"] = to_email
         msg_root["Date"] = formatdate(localtime=True)
@@ -315,18 +315,18 @@ def send_google_verification_email(to_email: str, code: str) -> tuple[bool, str]
         msg_alternative = MIMEMultipart("alternative")
         msg_root.attach(msg_alternative)
 
-        text_content = f"""TrendCommerce AI - Verificação de Conta Google
+        text_content = f"""TrendEcommerce AI - Verificação de Conta Google
 
 Seu código de verificação Google é: {code}
 
-Use este código para confirmar a propriedade do seu e-mail e autenticar com segurança no TrendCommerce AI.
+Use este código para confirmar a propriedade do seu e-mail e autenticar com segurança no TrendEcommerce AI.
 
 ⚠️ ATENÇÃO DE SEGURANÇA:
 NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM.
-A equipe do TrendCommerce AI NUNCA solicitará seu código de segurança.
+A equipe do TrendEcommerce AI NUNCA solicitará seu código de segurança.
 
 ⏱️ Este código expira em 15 minutos.
-© 2026 TrendCommerce AI — Inteligência Preditiva de Mercado
+© 2026 TrendEcommerce AI — Inteligência Preditiva de Mercado
 """
 
         html_content = f"""<!DOCTYPE html>
@@ -334,7 +334,7 @@ A equipe do TrendCommerce AI NUNCA solicitará seu código de segurança.
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verificação Google - TrendCommerce AI</title>
+    <title>Verificação Google - TrendEcommerce AI</title>
     <style>
         body {{
             margin: 0;
@@ -453,9 +453,9 @@ A equipe do TrendCommerce AI NUNCA solicitará seu código de segurança.
         <div class="container">
             <div class="header">
                 <div>
-                    <img class="logo-img" src="cid:trendecommerce_logo" alt="TrendCommerce AI Logo" />
+                    <img class="logo-img" src="cid:trendecommerce_logo" alt="TrendEcommerce AI Logo" />
                 </div>
-                <h1 class="logo-title"><span class="logo-accent">Trend</span>Commerce AI</h1>
+                <h1 class="logo-title"><span class="logo-accent">Trend</span>Ecommerce AI</h1>
                 <div class="subtitle">AUTENTICAÇÃO CONTA GOOGLE</div>
             </div>
 
@@ -473,13 +473,13 @@ A equipe do TrendCommerce AI NUNCA solicitará seu código de segurança.
             <div class="security-alert">
                 <div class="security-title">⚠️ NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM</div>
                 <p class="security-text">
-                    Este código confirma que você é o titular desta conta Google. A equipe do <strong>TrendCommerce AI</strong> nunca entrará em contato solicitando seu código de acesso.
+                    Este código confirma que você é o titular desta conta Google. A equipe do <strong>TrendEcommerce AI</strong> nunca entrará em contato solicitando seu código de acesso.
                 </p>
             </div>
 
             <div class="footer">
-                <p>Se você não tentou fazer login com o Google no TrendCommerce AI, desconsidere este e-mail.</p>
-                <p>© 2026 TrendCommerce AI — Inteligência Preditiva de Mercado</p>
+                <p>Se você não tentou fazer login com o Google no TrendEcommerce AI, desconsidere este e-mail.</p>
+                <p>© 2026 TrendEcommerce AI — Inteligência Preditiva de Mercado</p>
             </div>
         </div>
     </div>

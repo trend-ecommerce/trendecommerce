@@ -1,7 +1,7 @@
 /**
- * TrendCommerce AI - Multi-Page Auth Controller
- * Gerencia autenticação em login.html, cadastro.html, recuperarsenha.html / recuperar-senha.html,
- * codigosenha.html / codigo-verificacao.html e novasenha.html / nova-senha.html.
+ * TrendEcommerce AI - Multi-Page Auth Controller
+ * Gerencia autenticação em login.html, cadastro.html, recuperarsenha.html,
+ * codigosenha.html e novasenha.html.
  */
 
 const BLOCKED_DOMAINS_CLIENT = new Set([
@@ -121,6 +121,11 @@ function setupLoginForm() {
         showVerificationBanner(
             'success',
             'Cadastro realizado com sucesso! Digite seu email e senha para entrar.'
+        );
+    } else if (params.get('reset') === '1') {
+        showVerificationBanner(
+            'success',
+            'Senha redefinida com sucesso! Digite sua nova senha para entrar.'
         );
     } else if (params.get('verified') === '1' || hash.includes('access_token=')) {
         showVerificationBanner(
@@ -260,7 +265,7 @@ function setupRegisterForm() {
 // 3. Recuperação - Etapa 1 (Solicitar Código)
 function setupRecoveryStep1() {
     const pagePath = window.location.pathname.toLowerCase();
-    const isStep1Page = pagePath.includes('recuperarsenha') || pagePath.includes('recuperar-senha');
+    const isStep1Page = pagePath.includes('recuperarsenha');
     const form = document.getElementById('formRecoveryStep1') || (isStep1Page ? document.querySelector('.login-right') : null);
     if (!form || !isStep1Page) return;
 
@@ -268,9 +273,21 @@ function setupRecoveryStep1() {
     const submitBtn = document.getElementById('btnRecoveryStep1Submit') || form.querySelector('.button-right');
     const errEl = document.getElementById('recoveryStep1Error');
 
+    const redirectNotice = sessionStorage.getItem('recovery_redirect_notice');
+    if (redirectNotice) {
+        sessionStorage.removeItem('recovery_redirect_notice');
+        if (errEl) {
+            errEl.style.color = '#fbbf24';
+            errEl.textContent = redirectNotice;
+        }
+    }
+
     form.onsubmit = async (e) => {
         e.preventDefault();
-        if (errEl) errEl.textContent = '';
+        if (errEl) {
+            errEl.style.color = '';
+            errEl.textContent = '';
+        }
         const email = (emailInput?.value || '').trim();
         const emailCheck = validateRealEmailClient(email);
         if (!emailCheck.valid) {
@@ -289,8 +306,7 @@ function setupRecoveryStep1() {
             if (res && res.message) {
                 sessionStorage.setItem('recovery_notice', res.message);
             }
-            const targetPage = pagePath.includes('recuperarsenha') ? 'codigosenha.html' : 'codigosenha.html';
-            window.location.href = targetPage;
+            window.location.href = 'codigosenha.html';
         } catch (err) {
             if (errEl) errEl.textContent = err.message || 'Email não encontrado.';
         } finally {
@@ -305,7 +321,7 @@ function setupRecoveryStep1() {
 // 4. Recuperação - Etapa 2 (Inserir Código OTP)
 function setupRecoveryStep2() {
     const pagePath = window.location.pathname.toLowerCase();
-    const isStep2Page = pagePath.includes('codigosenha') || pagePath.includes('codigo-verificacao');
+    const isStep2Page = pagePath.includes('codigosenha');
     const form = document.getElementById('formRecoveryStep2') || (isStep2Page ? document.querySelector('.login-right') : null);
     if (!form || !isStep2Page) return;
 
@@ -320,10 +336,18 @@ function setupRecoveryStep2() {
     otpInputs.forEach((inp, idx) => {
         inp.maxLength = 1;
         inp.inputMode = 'numeric';
-        inp.autocomplete = 'off';
+        inp.autocomplete = idx === 0 ? 'one-time-code' : 'off';
 
         inp.oninput = (e) => {
             const cleanVal = e.target.value.replace(/\D/g, '');
+            if (cleanVal.length > 1) {
+                for (let offset = 0; offset < cleanVal.length && (idx + offset) < otpInputs.length; offset++) {
+                    otpInputs[idx + offset].value = cleanVal[offset];
+                }
+                const nextIdx = Math.min(idx + cleanVal.length, otpInputs.length - 1);
+                if (otpInputs[nextIdx]) otpInputs[nextIdx].focus();
+                return;
+            }
             inp.value = cleanVal ? cleanVal[0] : '';
             if (cleanVal && idx < otpInputs.length - 1) {
                 otpInputs[idx + 1].focus();
@@ -363,7 +387,7 @@ function setupRecoveryStep2() {
                 await window.apiService.auth.forgotPassword(recoveryEmail);
                 if (errEl) {
                     errEl.style.color = '#34d399';
-                    errEl.textContent = 'Novo código enviado para seu e-mail! Verifique sua caixa de entrada e spam.';
+                    errEl.textContent = 'Novo código de 6 dígitos enviado para seu e-mail! Verifique sua caixa de entrada e spam.';
                 }
                 otpInputs.forEach(i => { if (i) i.value = ''; });
                 if (otpInputs[0]) otpInputs[0].focus();
@@ -384,11 +408,18 @@ function setupRecoveryStep2() {
             errEl.style.color = '';
             errEl.textContent = '';
         }
-        const code = otpInputs.map(i => i?.value || '').join('');
-        if (code.length < 4) {
+        if (!recoveryEmail) {
             if (errEl) {
                 errEl.style.color = '#ff6b81';
-                errEl.textContent = 'Digite os 4 dígitos do código de verificação.';
+                errEl.textContent = 'Email não identificado. Reinicie a recuperação.';
+            }
+            return;
+        }
+        const code = otpInputs.map(i => i?.value || '').join('');
+        if (code.length < 6) {
+            if (errEl) {
+                errEl.style.color = '#ff6b81';
+                errEl.textContent = 'Digite os 6 dígitos do código de verificação.';
             }
             return;
         }
@@ -400,14 +431,15 @@ function setupRecoveryStep2() {
         }
 
         try {
-            // Validar código OTP diretamente no backend antes de prosseguir para a tela de nova senha
-            if (recoveryEmail && window.apiService?.auth?.verifyResetCode) {
-                await window.apiService.auth.verifyResetCode(recoveryEmail, code);
+            // Validar código OTP de 6 dígitos diretamente no backend (Supabase Auth)
+            const res = await window.apiService.auth.verifyResetCode(recoveryEmail, code);
+            if (!res || !res.reset_token) {
+                throw new Error('Não foi possível obter o token de recuperação. Solicite um novo código.');
             }
-            sessionStorage.setItem('recovery_code', code);
+            sessionStorage.setItem('recovery_token', res.reset_token);
+            sessionStorage.removeItem('recovery_code');
             sessionStorage.removeItem('recovery_notice');
-            const targetPage = pagePath.includes('codigosenha') ? 'novasenha.html' : 'novasenha.html';
-            window.location.href = targetPage;
+            window.location.href = 'novasenha.html';
         } catch (err) {
             if (errEl) {
                 errEl.style.color = '#ff6b81';
@@ -425,7 +457,7 @@ function setupRecoveryStep2() {
 // 5. Recuperação - Etapa 3 (Definir Nova Senha)
 function setupRecoveryStep3() {
     const pagePath = window.location.pathname.toLowerCase();
-    const isStep3Page = pagePath.includes('novasenha') || pagePath.includes('nova-senha');
+    const isStep3Page = pagePath.includes('novasenha');
     const form = document.getElementById('formRecoveryStep3') || (isStep3Page ? document.querySelector('.login-right') : null);
     if (!form || !isStep3Page) return;
 
@@ -436,23 +468,19 @@ function setupRecoveryStep3() {
     const passErr = document.getElementById('recoveryNewPassError');
     const confirmErr = document.getElementById('recoveryConfirmPassError');
 
-    const hash = window.location.hash || '';
-    if (hash.includes('access_token=') || hash.includes('type=recovery')) {
-        // Usuário acessou diretamente pelo link do Supabase no e-mail
-        if (!sessionStorage.getItem('recovery_code')) {
-            sessionStorage.setItem('recovery_code', '1234');
-        }
-    }
-
     const storedEmail = sessionStorage.getItem('recovery_email') || '';
-    const storedCode = sessionStorage.getItem('recovery_code') || '';
+    const storedToken = sessionStorage.getItem('recovery_token') || '';
     if (emailInput && storedEmail) {
         emailInput.value = storedEmail;
     }
 
-    if (!storedCode && passErr) {
-        passErr.style.color = '#fbbf24';
-        passErr.textContent = 'Atenção: Nenhum código de validação detectado. Digite o código na tela anterior.';
+    if (!storedToken) {
+        sessionStorage.setItem(
+            'recovery_redirect_notice',
+            'Sessão de recuperação ausente ou expirada. Solicite um novo código para redefinir sua senha.'
+        );
+        window.location.replace('recuperarsenha.html');
+        return;
     }
 
     form.onsubmit = async (e) => {
@@ -472,8 +500,8 @@ function setupRecoveryStep3() {
             if (passErr) passErr.textContent = 'Informe o email.';
             hasError = true;
         }
-        if (!storedCode) {
-            if (passErr) passErr.textContent = 'Código de verificação ausente. Inicie a recuperação novamente.';
+        if (!storedToken) {
+            if (passErr) passErr.textContent = 'Sessão de recuperação expirada. Inicie a recuperação novamente.';
             hasError = true;
         }
         if (newPass.length < 6) {
@@ -492,11 +520,12 @@ function setupRecoveryStep3() {
         }
 
         try {
-            await window.apiService.auth.resetPassword(email, storedCode, newPass);
+            await window.apiService.auth.resetPassword(email, storedToken, newPass);
             sessionStorage.removeItem('recovery_email');
+            sessionStorage.removeItem('recovery_token');
             sessionStorage.removeItem('recovery_code');
             sessionStorage.removeItem('recovery_notice');
-            window.location.replace('login.html');
+            window.location.replace('login.html?reset=1');
         } catch (err) {
             if (passErr) {
                 passErr.style.color = '#ff6b81';

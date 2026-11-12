@@ -17,35 +17,31 @@ Interface web moderna com tema dark/cyberpunk de alta fidelidade para o sistema 
    - Botão **CADASTRAR** e botão lateral **ENTRAR**.
 
 3. **Recuperação de Senha - Etapa 1 (`ENVIAREMOS UM CÓDIGO PARA SEU EMAIL`)**:
-   - Campo: Email para envio do código de 4 dígitos.
+   - Campo: Email para envio do código de 6 dígitos via Supabase Auth.
    - Botão **ENVIAR**.
 
 4. **Recuperação de Senha - Etapa 2 (`DIGITE SEU CÓDIGO`)**:
-   - 4 campos circulares de dígitos OTP com avanço automático, suporte a backspace e colagem direta.
+   - 6 campos circulares de dígitos OTP com avanço automático, suporte a backspace, colagem direta e preenchimento automático (`one-time-code`).
    - Opção de reenviar código.
    - Botão **ENVIAR**.
 
 5. **Recuperação de Senha - Etapa 3 (`NOVA SENHA / LOGIN`)**:
-   - Campos: Nova Senha e Confirmação de Senha com alternador de visualização.
-   - Botão **LOGIN** para redefinição e acesso imediato.
+   - Campos: Email, Nova Senha e Confirmação de Senha com alternador de visualização.
+   - Botão **LOGIN** para redefinição (sincronizada no banco local e no Supabase Auth) e acesso imediato.
 
-6. **Painel de Sessão Conectada**:
-   - Demonstração do estado pós-login com dados do usuário ativo e status online.
+6. **Painel de Sessão Conectada (`ia-preditiva.html`)**:
+   - Interface principal autenticada com dados do usuário ativo, gráficos e análises preditivas.
 
 ---
 
 ## 🚀 Como Executar
 
-### Opção 1: Via Python Server (Recomendado)
 Execute no terminal a partir da raiz do projeto:
 
 ```bash
-python frontend/server.py
+python main.py
 ```
-Abra o navegador em: **`http://localhost:8000`**
-
-### Opção 2: Abertura Direta
-Abra o arquivo `frontend/index.html` diretamente em qualquer navegador moderno.
+Abra o navegador em: **`http://localhost:8000/app/login.html`** (ou **`http://localhost:8000/`**).
 
 ---
 

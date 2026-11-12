@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
         from src.database.seed_loader import ensure_calibrated_databases
         ensure_calibrated_databases(db_manager)
     except Exception as err:
-        print(f"[TrendCommerce] Erro na verificação de calibragem inicial: {err}")
+        print(f"[TrendEcommerce AI] Erro na verificação de calibragem inicial: {err}")
 
     # 2. Garantir fallback de seed e usuário administrador
     with db_manager.session() as session:
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
             from src.database.seed_loader import seed_database_if_empty
             seed_database_if_empty(session)
         except Exception as err:
-            print(f"[TrendCommerce] Erro ao carregar seed inicial: {err}")
+            print(f"[TrendEcommerce AI] Erro ao carregar seed inicial: {err}")
 
         # 2. Garantir usuário administrador padrão
         try:
@@ -44,26 +44,26 @@ async def lifespan(app: FastAPI):
                 )
                 session.add(admin_user)
                 session.commit()
-                print("[TrendCommerce] Usuário administrador padrão criado com sucesso.")
+                print("[TrendEcommerce AI] Usuário administrador padrão criado com sucesso.")
         except Exception as err:
-            print(f"[TrendCommerce] Erro ao criar admin padrão: {err}")
+            print(f"[TrendEcommerce AI] Erro ao criar admin padrão: {err}")
 
         # 3. Inicialização leve do motor preditivo XGBoost (<80 MB RAM)
         try:
             model_file = Path("models/xgboost_demand_v1.json")
             if not model_file.exists():
-                print("[TrendCommerce] Artefato XGBoost não encontrado. Executando pipeline de treinamento inicial...")
+                print("[TrendEcommerce AI] Artefato XGBoost não encontrado. Executando pipeline de treinamento inicial...")
                 from src.ml.train_pipeline import run_training_pipeline
                 run_training_pipeline(str(model_file))
             get_ml_forecaster(session)
-            print("[TrendCommerce] Motor preditivo XGBoost carregado em memória (<80MB RAM).")
+            print("[TrendEcommerce AI] Motor preditivo XGBoost carregado em memória (<80MB RAM).")
         except Exception as err:
-            print(f"[TrendCommerce] Erro no warmup ML: {err}")
+            print(f"[TrendEcommerce AI] Erro no warmup ML: {err}")
     yield
 
 
 app = FastAPI(
-    title="TrendCommerce API",
+    title="TrendEcommerce AI API",
     description="API REST de Gestão de Catálogo, Histórico de Vendas e Previsão de Demanda com Inteligência Artificial (XGBoost).",
     version="1.0.0",
     docs_url="/docs",
@@ -124,7 +124,7 @@ def root():
     if frontend_dir.exists():
         return RedirectResponse(url="/app/ia-preditiva.html")
     return {
-        "system": "TrendCommerce API",
+        "system": "TrendEcommerce AI API",
         "status": "online",
         "version": "1.0.0",
         "docs": "/docs"

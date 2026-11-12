@@ -1,6 +1,8 @@
+import logging
 import random
+import secrets
 import time
-from typing import Dict
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -25,7 +27,7 @@ from src.schemas.auth_schema import (
     PasswordResetConfirmRequest,
     MessageResponse
 )
-from src.api.services.email_service import send_otp_email, send_google_verification_email
+from src.api.services.email_service import send_google_verification_email
 from src.api.services.supabase_service import (
     SYSTEM_ALLOWED_EMAILS,
     validate_real_email,
@@ -34,15 +36,26 @@ from src.api.services.supabase_service import (
     supabase_resend_confirmation,
     supabase_sync_user_row,
     supabase_send_password_recovery,
+    supabase_ensure_auth_user_for_recovery,
+    supabase_verify_recovery_otp,
+    supabase_update_auth_password,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
-# Armazenamento em memória para códigos OTP de recuperação de senha, Google Auth e tentativas de login
-_reset_codes: Dict[str, str] = {}
+# Armazenamento em memória para tickets de recuperação de senha, Google Auth e tentativas de login
+_reset_tickets: Dict[str, Dict[str, Any]] = {}
 _google_otp_codes: Dict[str, dict] = {}
 _email_verify_codes: Dict[str, str] = {}
 _login_attempts: Dict[str, list[float]] = {}
+
+
+def _purge_expired_reset_tickets(now: float) -> None:
+    expired = [token for token, data in _reset_tickets.items() if data.get("expires", 0) < now]
+    for token in expired:
+        _reset_tickets.pop(token, None)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Cadastrar novo usuário com email válido")
@@ -128,7 +141,7 @@ def verify_registration_email(request: GoogleVerifyCodeRequest, db: Session = De
     email_clean = str(request.email).lower().strip()
     expected_code = _email_verify_codes.get(email_clean)
 
-    if request.code != expected_code and request.code != "1234":
+    if not expected_code or request.code != expected_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Código de verificação inválido ou expirado. Verifique o e-mail recebido."
@@ -430,7 +443,7 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 @router.post("/forgot-password", response_model=MessageResponse, summary="Solicitar código de recuperação de senha")
 def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)):
-    """Gera um código OTP de 4 dígitos para recuperação de senha e dispara e-mail via SMTP e Supabase Auth."""
+    """Dispara o código OTP de 6 dígitos para recuperação de senha exclusivamente via Supabase Auth."""
     email_clean = str(request.email).lower().strip()
     user = db.query(User).filter(User.email == email_clean).first()
     if not user:
@@ -439,29 +452,33 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
             detail="Nenhuma conta cadastrada com este email."
         )
 
-    otp_code = str(random.randint(1000, 9999))
-    _reset_codes[email_clean] = otp_code
-    
-    # 1. Enviar código OTP personalizado via SMTP oficial
-    smtp_sent, smtp_msg = send_otp_email(email_clean, otp_code)
+    # Garante que contas antigas ou criadas apenas no banco local existam no Supabase Auth
+    sync_status = supabase_ensure_auth_user_for_recovery(email_clean, user.name)
+    logger.info(
+        "[RECUPERACAO DE SENHA] Conta verificada no Supabase Auth | email=%s | status=%s",
+        email_clean,
+        sync_status,
+    )
 
-    # 2. Também disparar e-mail de recuperação oficial via Supabase Auth
     sb_sent, sb_msg = supabase_send_password_recovery(email_clean)
-    
-    message = f"Código de verificação enviado para {email_clean}! Verifique sua caixa de entrada e a pasta de spam/lixeira."
-    
-    # Log seguro no console
-    print(f"\n[RECUPERACAO DE SENHA] Email: {email_clean} | Codigo OTP: {otp_code} | SMTP: {smtp_msg} | Supabase: {sb_msg}\n")
+    if not sb_sent:
+        is_rate_limit = "limite" in sb_msg.lower() or "aguarde" in sb_msg.lower() or "429" in sb_msg
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS if is_rate_limit else status.HTTP_502_BAD_GATEWAY,
+            detail=sb_msg,
+        )
+
+    logger.info("[RECUPERACAO DE SENHA] E-mail de recuperação solicitado via Supabase Auth | email=%s", email_clean)
 
     return MessageResponse(
-        message=message,
+        message=f"Código de verificação de 6 dígitos enviado para {email_clean}! Verifique sua caixa de entrada e a pasta de spam/lixeira.",
         success=True
     )
 
 
 @router.post("/verify-reset-code", response_model=MessageResponse, summary="Verificar código OTP de recuperação de senha")
 def verify_reset_code(request: PasswordResetVerifyRequest, db: Session = Depends(get_db)):
-    """Valida se o código OTP informado está correto antes de avançar para a redefinição de senha."""
+    """Valida o código OTP de 6 dígitos no Supabase Auth e emite um ticket temporário de redefinição."""
     email_clean = str(request.email).lower().strip()
     user = db.query(User).filter(User.email == email_clean).first()
     if not user:
@@ -470,29 +487,72 @@ def verify_reset_code(request: PasswordResetVerifyRequest, db: Session = Depends
             detail="Nenhuma conta cadastrada com este email."
         )
 
-    expected_code = _reset_codes.get(email_clean)
-    if request.code != expected_code and request.code != "1234":
+    code_clean = request.code.strip()
+    if not code_clean.isdigit() or len(code_clean) != 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Código de verificação incorreto ou expirado. Verifique seu e-mail e tente novamente."
+            detail="Digite os 6 dígitos numéricos do código enviado para seu e-mail."
         )
+
+    ok, msg, access_token = supabase_verify_recovery_otp(email_clean, code_clean)
+    if not ok or not access_token:
+        is_rate_limit = "tentativas" in msg.lower() or "limite" in msg.lower()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS if is_rate_limit else status.HTTP_400_BAD_REQUEST,
+            detail=msg,
+        )
+
+    now = time.time()
+    _purge_expired_reset_tickets(now)
+
+    reset_token = secrets.token_urlsafe(32)
+    _reset_tickets[reset_token] = {
+        "email": email_clean,
+        "access_token": access_token,
+        "expires": now + 15 * 60,
+    }
 
     return MessageResponse(
         message="Código de verificação validado com sucesso!",
-        success=True
+        success=True,
+        reset_token=reset_token,
     )
 
 
-@router.post("/reset-password", response_model=MessageResponse, summary="Redefinir senha com código OTP")
+@router.post("/reset-password", response_model=MessageResponse, summary="Redefinir senha com ticket de recuperação")
 def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
-    """Verifica o código de 4 dígitos e atualiza a senha do usuário."""
+    """Valida o ticket temporário emitido em /verify-reset-code e atualiza a senha localmente e no Supabase Auth."""
     email_clean = str(request.email).lower().strip()
-    expected_code = _reset_codes.get(email_clean)
-
-    if request.code != expected_code and request.code != "1234":
+    ticket_id = (request.reset_token or request.code or "").strip()
+    if not ticket_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Código de recuperação inválido ou expirado."
+            detail="Token de recuperação ausente ou inválido. Solicite um novo código."
+        )
+
+    now = time.time()
+    ticket_data = _reset_tickets.get(ticket_id)
+    if not ticket_data:
+        _purge_expired_reset_tickets(now)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sessão de recuperação inválida ou expirada. Solicite um novo código."
+        )
+
+    if ticket_data.get("expires", 0) < now:
+        _reset_tickets.pop(ticket_id, None)
+        _purge_expired_reset_tickets(now)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sua sessão de recuperação expirou. Solicite um novo código."
+        )
+
+    _purge_expired_reset_tickets(now)
+
+    if ticket_data.get("email") != email_clean:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token de recuperação não corresponde ao e-mail informado."
         )
 
     user = db.query(User).filter(User.email == email_clean).first()
@@ -508,18 +568,25 @@ def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(g
             detail="A nova senha deve conter no mínimo 6 caracteres."
         )
 
+    # Ticket é de uso único: consome imediatamente após validações
+    _reset_tickets.pop(ticket_id, None)
+
     user.hashed_password = get_password_hash(request.new_password)
     db.commit()
     db.refresh(user)
+
+    sb_updated = supabase_update_auth_password(ticket_data["access_token"], request.new_password)
+    if not sb_updated:
+        logger.warning(
+            "[RECUPERACAO DE SENHA] Senha local atualizada, porém não foi possível sincronizar no Supabase Auth | email=%s",
+            email_clean,
+        )
 
     # Sincronizar com tabela users no Supabase caso ativo
     try:
         supabase_sync_user_row(user.email, user.hashed_password, user.name or email_clean.split('@')[0], is_active=user.is_active)
     except Exception:
         pass
-
-    if email_clean in _reset_codes:
-        del _reset_codes[email_clean]
 
     return MessageResponse(
         message="Senha redefinida com sucesso! Você já pode realizar o login.",

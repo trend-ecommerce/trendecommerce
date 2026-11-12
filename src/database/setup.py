@@ -1,4 +1,4 @@
-"""Script de setup e manutenção do banco de dados (TrendCommerce).
+"""Script de setup e manutenção do banco de dados (TrendEcommerce AI).
 
 Uso:
     python -m src.database.setup [comando]
@@ -56,12 +56,10 @@ def drop_tables(manager: DatabaseManager):
 
 
 def seed_data(manager: DatabaseManager):
-    """Popula o banco integrando a API de Vendas do professor e criando usuário padrão."""
-    import numpy as np
-    np.random.seed(42)
-    
+    """Popula o banco integrando a API de Histórico de Vendas e garantindo o catálogo oficial calibrado."""
     logger.info("Iniciando população do banco de dados...")
-    
+
+    needs_calibration = False
     with manager.session() as session:
         # 1. Usuário Administrador de Teste
         existing_user = session.query(User).filter_by(email="admin@trendecommerce.com").first()
@@ -79,46 +77,30 @@ def seed_data(manager: DatabaseManager):
             existing_user.hashed_password = bcrypt.hashpw(b"admin123", bcrypt.gensalt(10)).decode("utf-8")
             session.commit()
 
-        # 2. Tentar sincronizar da nova API de Vendas oficial
+        # 2. Tentar sincronizar da API oficial de Histórico de Vendas
         logger.info("Tentando sincronizar produtos e histórico da API de Histórico de Vendas...")
         sync_res = vendas_client.sync_to_trendecommerce(session, min_date="2020-01-01")
 
         if sync_res.get("success"):
-            logger.info(f"Sucesso! {sync_res['total_products']} produtos e {sync_res['total_sales']:,} registros de vendas importados da API oficial.")
+            logger.info(
+                f"Sucesso! {sync_res['total_products']} produtos e "
+                f"{sync_res['total_sales']:,} registros de vendas importados da API oficial."
+            )
             return
 
-        # 3. Fallback de contingência caso os arquivos da API não estejam disponíveis
-        logger.warning(f"Não foi possível sincronizar da API externa ({sync_res.get('error')}). Usando catálogo base de contingência.")
-        products = [
-            Product(external_id="PROD_101", platform="api_vendas", title="Notebook Dell Inspiron 15 Intel Core i7 16GB 512GB SSD", category="Eletrônicos", price=3499.99),
-            Product(external_id="PROD_102", platform="api_vendas", title="MacBook Air M2 13.6 Polegadas 8GB RAM 256GB SSD", category="Eletrônicos", price=6899.00),
-            Product(external_id="PROD_103", platform="api_vendas", title="Smartphone Samsung Galaxy S23 5G 256GB", category="Eletrônicos", price=3199.00),
-            Product(external_id="PROD_104", platform="api_vendas", title="Creatina Monohidratada Pura Micronizada 300g", category="Esportes e fitness", price=119.90),
-            Product(external_id="PROD_105", platform="api_vendas", title="Whey Protein Concentrado 100% Pouch 900g", category="Esportes e fitness", price=149.90),
-            Product(external_id="PROD_106", platform="api_vendas", title="Tênis Esportivo Running Amortecimento Pro", category="Moda e acessórios", price=289.90),
-            Product(external_id="PROD_107", platform="api_vendas", title="Batom Líquido Matte Longa Duração Efeito Aveludado", category="Beleza e cuidados pessoais", price=39.90),
-            Product(external_id="PROD_108", platform="api_vendas", title="Cafeteira Elétrica Programável Jarra Inox 1.5L", category="Casa e decoração", price=229.90),
-        ]
-        session.add_all(products)
-        session.flush()
+        logger.warning(
+            f"Não foi possível sincronizar diretamente via API ({sync_res.get('error')}). "
+            "Delegando para ensure_calibrated_databases..."
+        )
+        needs_calibration = True
 
-        base_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        for product in products:
-            for day in range(90):
-                sale_date = base_date - timedelta(days=89 - day)
-                weekend_factor = 1.3 if sale_date.weekday() in [5, 6] else 1.0
-                qty = max(2, int(np.random.poisson(20) * weekend_factor))
-                sale = SalesHistory(
-                    product_id=product.id,
-                    date=sale_date,
-                    quantity_sold=qty,
-                    price_at_date=product.price,
-                    available_quantity=100,
-                    platform=product.platform
-                )
-                session.add(sale)
-        session.commit()
-        logger.info("Catálogo base de contingência criado com sucesso.")
+    if needs_calibration:
+        from src.database.seed_loader import ensure_calibrated_databases
+
+        if ensure_calibrated_databases(manager):
+            logger.info("Banco de dados calibrado com sucesso via ensure_calibrated_databases.")
+        else:
+            logger.error("Falha ao calibrar o banco de dados via ensure_calibrated_databases.")
 
 
 def sync_up_to_today(manager: DatabaseManager) -> int:
@@ -204,7 +186,7 @@ def main():
     }
     
     if len(sys.argv) < 2 or sys.argv[1] not in commands:
-        print("\n TrendCommerce - Setup do Banco de Dados")
+        print("\n TrendEcommerce AI - Setup do Banco de Dados")
         print("=" * 50)
         print("\nUso: python -m src.database.setup [comando]\n")
         print("Comandos disponíveis:")

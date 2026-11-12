@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='trendcommerce-ai',
+    name='trendecommerce-ai',
     version='1.0.0',
-    author='TrendCommerce Team',
+    author='TrendEcommerce AI Team',
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     python_requires='>=3.10',
@@ -16,15 +16,13 @@ setup(
         'numpy>=1.26.0',
         'psycopg2-binary>=2.9.0',
         'sqlalchemy>=2.0.0',
-        'alembic>=1.13.0',
         'bcrypt>=4.0.0',
-        'passlib>=1.7.4',
         'python-jose[cryptography]>=3.3.0',
+        'email-validator>=2.0.0',
+        'google-auth>=2.28.0',
         'requests>=2.31.0',
         'httpx>=0.27.0',
-        'aiohttp>=3.9.0',
         'python-dotenv>=1.0.0',
         'pydantic>=2.7.0',
-        'pydantic-settings>=2.2.0',
     ],
 )

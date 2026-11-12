@@ -58,15 +58,17 @@ class PasswordResetRequest(BaseModel):
 
 class PasswordResetVerifyRequest(BaseModel):
     email: EmailStr = Field(..., description="Email para validação do código")
-    code: str = Field(..., min_length=4, max_length=4, description="Código de 4 dígitos")
+    code: str = Field(..., min_length=6, max_length=6, description="Código OTP de 6 dígitos")
 
 
 class PasswordResetConfirmRequest(BaseModel):
     email: EmailStr
-    code: str = Field(..., min_length=4, max_length=4, description="Código de 4 dígitos")
+    reset_token: Optional[str] = Field(None, description="Ticket temporário gerado após validação do OTP")
+    code: Optional[str] = Field(None, description="Alias retrocompatível para o ticket temporário")
     new_password: str = Field(..., min_length=6, description="Nova senha")
 
 
 class MessageResponse(BaseModel):
     message: str
     success: bool = True
+    reset_token: Optional[str] = None

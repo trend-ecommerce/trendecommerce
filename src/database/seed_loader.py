@@ -286,61 +286,10 @@ def seed_database_if_empty(session: Session):
                 run_update_nov30()
                 session.expire_all()
                 return
-
-        # Fallback para initial_seed.json caso a API externa não esteja acessível e o banco esteja vazio
-        if session.query(Product).count() > 0:
-            return
-
-        seed_file = Path(__file__).parent.parent.parent / "data" / "initial_seed.json"
-        if not seed_file.exists():
-            return
-
-        with open(seed_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        products_data = data.get("products", [])
-        sales_data = data.get("sales_history", [])
-
-        for p_data in products_data:
-            product = Product(
-                id=p_data.get("id"),
-                external_id=p_data.get("external_id") or f"PROD_{p_data.get('id')}",
-                platform="api_vendas",
-                title=p_data.get("title") or "Produto",
-                category=p_data.get("category") or "Geral",
-                price=float(p_data.get("price") or 100.0),
-                currency=p_data.get("currency") or "BRL",
-                condition=p_data.get("condition") or "new",
-                url=p_data.get("url"),
-                attributes=p_data.get("attributes"),
-                created_at=_parse_dt(p_data.get("created_at")),
-                updated_at=_parse_dt(p_data.get("updated_at")),
-                is_active=bool(p_data.get("is_active", True))
-            )
-            session.add(product)
-        session.flush()
-
-        if sales_data:
-            today_midnight = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            seed_dates = [_parse_dt(s.get("date")) for s in sales_data if s.get("date")]
-            max_seed_date = max(seed_dates) if seed_dates else today_midnight
-            seed_shift = today_midnight - max_seed_date
-
-            for s_data in sales_data:
-                shifted_date = _parse_dt(s_data.get("date")) + seed_shift
-                sales_entry = SalesHistory(
-                    id=s_data.get("id"),
-                    product_id=s_data.get("product_id"),
-                    date=shifted_date,
-                    quantity_sold=int(s_data.get("quantity_sold", 10)),
-                    price_at_date=float(s_data.get("price_at_date", 100.0)),
-                    available_quantity=int(s_data.get("available_quantity", 50)),
-                    platform="api_vendas",
-                    collected_at=_parse_dt(s_data.get("collected_at"))
-                )
-                session.add(sales_entry)
-
-        session.commit()
+            except Exception as err:
+                logger.warning(f"[SeedLoader] Falha ao executar update_historical_data_to_nov30: {err}")
+        else:
+            logger.error("[SeedLoader] Nenhum catálogo oficial (historico_vendas.db nem data/catalog_500_products.json) encontrado.")
     except Exception as e:
         session.rollback()
         print(f"[SeedLoader] Erro ao sincronizar seed: {e}")
