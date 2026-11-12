@@ -24,5 +24,6 @@ setup(
         'httpx>=0.27.0',
         'python-dotenv>=1.0.0',
         'pydantic>=2.7.0',
+        'openpyxl>=3.1.2',
     ],
 )

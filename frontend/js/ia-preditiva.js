@@ -21,6 +21,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const canvas = document.getElementById('mainSalesChartCanvas');
     const tooltip = document.getElementById('iaChartTooltip');
+    const btnExportExcel = document.getElementById('btnExportExcel');
+    if (btnExportExcel) {
+        btnExportExcel.onclick = handleExportReport;
+    }
 
     // Inicialização
     await loadInitialData();
@@ -755,65 +759,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
 
-    // Exportação direta para Excel (.CSV)
+    // Exportação nativa para Excel (.xlsx)
     async function handleExportReport() {
         const btnExport = document.getElementById('btnExportExcel');
+        const labelSpan = btnExport ? btnExport.querySelector('span') : null;
+        const originalLabel = labelSpan ? labelSpan.textContent : 'EXCEL';
+        const prevWidth = btnExport ? btnExport.style.width : '';
+        const prevPadding = btnExport ? btnExport.style.padding : '';
+
+        let errorEl = document.getElementById('exportExcelError');
+        if (errorEl) {
+            errorEl.style.display = 'none';
+            errorEl.textContent = '';
+        }
+
         if (btnExport) {
             btnExport.disabled = true;
-            btnExport.style.opacity = '0.7';
+            btnExport.style.opacity = '0.75';
+            btnExport.style.width = 'auto';
+            btnExport.style.minWidth = '140px';
+            btnExport.style.padding = '0 16px';
+            if (labelSpan) labelSpan.textContent = 'GERANDO EXCEL...';
         }
+
         try {
-            const summary = await window.apiService.forecast.summary(state.horizonDays);
-            triggerCsvDownload(summary);
+            const activeCategory = (state.selectedCategory && state.selectedCategory !== 'GERAIS')
+                ? state.selectedCategory
+                : null;
+            const focusProductId = state.selectedProduct ? state.selectedProduct.id : null;
+
+            const { blob, filename } = await window.apiService.forecast.exportExcel(
+                state.horizonDays,
+                activeCategory,
+                focusProductId
+            );
+
+            const catSlug = activeCategory
+                ? '_' + activeCategory.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+                : '';
+            const expectedFilename = `trendecommerce_relatorio_${state.horizonDays}d${catSlug}.xlsx`;
+            const finalFilename = (filename && filename.endsWith('.xlsx') && (!catSlug || filename.includes(catSlug)))
+                ? filename
+                : expectedFilename;
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', finalFilename);
+            document.body.appendChild(link);
+            link.click();
+            setTimeout(() => {
+                if (link.parentNode) {
+                    link.parentNode.removeChild(link);
+                }
+                URL.revokeObjectURL(url);
+            }, 400);
         } catch (err) {
-            console.error('Erro ao exportar relatório:', err);
+            console.error('Erro ao exportar relatório Excel:', err);
+            if (btnExport) {
+                if (!errorEl) {
+                    errorEl = document.createElement('p');
+                    errorEl.id = 'exportExcelError';
+                    errorEl.style.cssText = 'margin: 10px 0 0; font-size: 12px; color: #fca5a5; line-height: 1.35; max-width: 240px;';
+                    btnExport.insertAdjacentElement('afterend', errorEl);
+                }
+                errorEl.textContent = err?.message || 'Erro ao gerar relatório Excel. Tente novamente.';
+                errorEl.style.display = 'block';
+            }
         } finally {
             if (btnExport) {
                 btnExport.disabled = false;
                 btnExport.style.opacity = '1';
+                btnExport.style.width = prevWidth;
+                btnExport.style.padding = prevPadding;
+                if (labelSpan) labelSpan.textContent = originalLabel;
             }
         }
-    }
-
-    function triggerCsvDownload(summary) {
-        if (!summary || !summary.items || summary.items.length === 0) {
-            return;
-        }
-
-        const BOM = '\uFEFF';
-        const headers = [
-            'ID',
-            'Produto',
-            'Categoria',
-            'Preco Unitario (R$)',
-            `Demanda Prevista (${summary.horizon_days} Dias)`,
-            'Faturamento Projetado (R$)',
-            'Media Diaria (un)',
-            'Estoque Recomendado'
-        ];
-
-        const rows = summary.items.map(item => [
-            item.product_id,
-            `"${String(item.product_title || '').replace(/"/g, '""')}"`,
-            `"${String(item.category || '').replace(/"/g, '""')}"`,
-            Number(item.unit_price || 0).toFixed(2).replace('.', ','),
-            item.total_predicted_units || 0,
-            Number(item.total_projected_revenue || 0).toFixed(2).replace('.', ','),
-            Number(item.daily_average || 0).toFixed(1).replace('.', ','),
-            item.recommended_stock_buffer || 0
-        ]);
-
-        const csvContent = BOM + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\r\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.setAttribute('href', url);
-        link.setAttribute('download', `trendecommerce_relatorio_${summary.horizon_days}d.csv`);
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(() => {
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        }, 300);
     }
 });

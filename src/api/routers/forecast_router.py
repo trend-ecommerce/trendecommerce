@@ -1,13 +1,18 @@
 import math
+import re
+import unicodedata
 from datetime import datetime, timedelta
 import time
 from typing import Optional
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db, get_ml_forecaster
+from src.api.services.excel_report_service import generate_forecast_excel_report
 from src.database.models import Product, SalesHistory
 from src.ml.future_forecaster import FutureForecaster
 from src.schemas.forecast_schema import (
@@ -204,32 +209,72 @@ def predict_product_demand(
         )
 
 
-@router.get("/summary", response_model=ForecastSummaryResponse, summary="Resumo executivo de previsões de todos os produtos")
-def get_forecast_summary(
-    horizon_days: int = Query(7, ge=1, le=30, description="Horizonte de projeção em dias"),
-    db: Session = Depends(get_db),
-    forecaster: FutureForecaster = Depends(get_ml_forecaster)
-):
-    """Gera projeção consolidada para todos os produtos ativos."""
+def _compute_batch_historical_stats(sales_df: pd.DataFrame) -> dict[int, dict[str, float]]:
+    """Calcula estatísticas reais dos últimos 30 dias em lote (sem consultas N+1)."""
+    if sales_df is None or sales_df.empty:
+        return {}
+
+    from src.features.feature_engineering import FeatureEngineer
+
+    df = sales_df.copy()
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+    max_dt = df["date"].max()
+    cutoff_30d = max_dt - pd.Timedelta(days=29)
+
+    hist_stats: dict[int, dict[str, float]] = {}
+    for pid, grp in df.groupby("product_id"):
+        daily_df = (
+            grp.groupby("date", as_index=False)["quantity_sold"]
+            .sum()
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+        sanitized = FeatureEngineer.sanitize_sales_series(
+            daily_df["quantity_sold"],
+            product_id=int(pid),
+            dates=daily_df["date"],
+        )
+        recent_mask = daily_df["date"] >= cutoff_30d
+        recent_vals = sanitized[recent_mask].values if recent_mask.any() else sanitized.tail(30).values
+        if len(recent_vals) > 0:
+            total_30d = float(np.sum(recent_vals))
+            avg_30d = float(np.mean(recent_vals))
+        else:
+            total_30d = 0.0
+            avg_30d = 0.0
+        hist_stats[int(pid)] = {
+            "hist_30d_total": total_30d,
+            "hist_30d_avg": avg_30d,
+        }
+    return hist_stats
+
+
+def _get_or_build_summary(
+    horizon_days: int,
+    db: Session,
+    forecaster: FutureForecaster,
+) -> tuple[ForecastSummaryResponse, Optional[pd.DataFrame]]:
+    """Retorna o resumo consolidado do cache ou calcula em lote populando _summary_cache."""
     now_ts = time.time()
     today_str = datetime.now().strftime("%Y-%m-%d")
     cache_key = (horizon_days, today_str)
     if cache_key in _summary_cache:
         cached_time, cached_val = _summary_cache[cache_key]
         if now_ts - cached_time < 180:
-            return cached_val
+            return cached_val, None
 
     products = db.query(Product).filter(Product.is_active.is_(True)).all()
     sales_df = _load_recent_sales_df(db, days_window=100) if products else pd.DataFrame()
 
     if not products or sales_df.empty:
-        return ForecastSummaryResponse(
+        empty_summary = ForecastSummaryResponse(
             horizon_days=horizon_days,
             total_products=0,
             total_projected_revenue=0.0,
             total_predicted_units=0,
             items=[]
         )
+        return empty_summary, sales_df
 
     products_df = pd.DataFrame([
         {
@@ -287,7 +332,64 @@ def get_forecast_summary(
         items=items
     )
     _summary_cache[cache_key] = (now_ts, summary_result)
+    return summary_result, sales_df
+
+
+@router.get("/summary", response_model=ForecastSummaryResponse, summary="Resumo executivo de previsões de todos os produtos")
+def get_forecast_summary(
+    horizon_days: int = Query(7, ge=1, le=30, description="Horizonte de projeção em dias"),
+    db: Session = Depends(get_db),
+    forecaster: FutureForecaster = Depends(get_ml_forecaster)
+):
+    """Gera projeção consolidada para todos os produtos ativos."""
+    summary_result, _ = _get_or_build_summary(horizon_days, db, forecaster)
     return summary_result
+
+
+@router.get("/export-excel", summary="Exportar relatório executivo completo em Excel (.xlsx)")
+def export_forecast_excel(
+    horizon_days: int = Query(14, ge=1, le=30, description="Horizonte de projeção em dias"),
+    category: Optional[str] = Query(None, description="Categoria aplicada no relatório"),
+    product_id: Optional[int] = Query(None, description="ID do produto selecionado para destaque"),
+    db: Session = Depends(get_db),
+    forecaster: FutureForecaster = Depends(get_ml_forecaster),
+):
+    """Gera e transmite arquivo .xlsx nativo com 4 abas executivas e fórmulas Excel."""
+    summary_result, cached_sales_df = _get_or_build_summary(horizon_days, db, forecaster)
+
+    if cached_sales_df is None:
+        sales_df = _load_recent_sales_df(db, days_window=45)
+        if not sales_df.empty:
+            sales_df, _ = _apply_cutoff_filter(sales_df)
+    else:
+        sales_df = cached_sales_df
+
+    historical_stats = _compute_batch_historical_stats(sales_df)
+
+    excel_stream = generate_forecast_excel_report(
+        items=summary_result.items,
+        horizon_days=horizon_days,
+        category=category,
+        product_id=product_id,
+        historical_stats=historical_stats,
+    )
+
+    filename = f"trendecommerce_relatorio_{horizon_days}d.xlsx"
+    if category and category.strip():
+        norm_cat = unicodedata.normalize("NFKD", category.strip())
+        ascii_cat = "".join(c for c in norm_cat if not unicodedata.combining(c))
+        slug = re.sub(r"[^a-zA-Z0-9]+", "_", ascii_cat).strip("_").lower()
+        if slug and slug not in ("gerais", "geral", "todas", "todos"):
+            filename = f"trendecommerce_relatorio_{horizon_days}d_{slug}.xlsx"
+
+    return StreamingResponse(
+        excel_stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/ranking", response_model=ForecastRankingResponse, summary="Ranking preditivo de produtos e categorias")

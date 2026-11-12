@@ -583,3 +583,78 @@ def test_forecast_timeline_endpoint(client):
     # 4. Testar produto inexistente (deve retornar 404)
     resp_404 = client.get("/api/v1/forecast/timeline/999999?history_range=6m&horizon_days=14")
     assert resp_404.status_code == 404
+
+
+def test_forecast_export_excel(client):
+    """Testa geração e conteúdo do relatório Excel (.xlsx) com 4 abas e fórmulas."""
+    import io
+    import openpyxl
+
+    # 1. Exportação completa para 7 dias
+    resp = client.get("/api/v1/forecast/export-excel?horizon_days=7")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert 'filename="trendecommerce_relatorio_7d.xlsx"' in resp.headers.get("content-disposition", "")
+
+    wb = openpyxl.load_workbook(io.BytesIO(resp.content), data_only=False)
+    assert wb.sheetnames == [
+        "Resumo Executivo",
+        "Previsão por Produto",
+        "Projeção Diária",
+        "Histórico x Previsão",
+    ]
+
+    ws_resumo = wb["Resumo Executivo"]
+    assert ws_resumo.max_row > 12
+    assert any(
+        isinstance(cell.value, str) and cell.value.startswith("=SUM(")
+        for row in ws_resumo.iter_rows()
+        for cell in row
+    )
+
+    ws_prod = wb["Previsão por Produto"]
+    assert ws_prod.max_row >= 10
+    assert any(
+        isinstance(cell.value, str) and cell.value.startswith("=SUM(")
+        for cell in ws_prod[ws_prod.max_row]
+    )
+
+    ws_daily = wb["Projeção Diária"]
+    assert ws_daily.max_row >= 8
+    assert [ws_daily.cell(row=1, column=c).value for c in range(1, 9)] == [
+        "Data",
+        "Dia da Semana",
+        "Produto",
+        "Categoria",
+        "Demanda Prevista",
+        "IC Mín",
+        "IC Máx",
+        "Faturamento Diário",
+    ]
+
+    ws_hist = wb["Histórico x Previsão"]
+    assert ws_hist.max_row >= 10
+
+    # 2. Exportação filtrada por categoria e produto selecionado
+    resp_filtered = client.get("/api/v1/forecast/export-excel?horizon_days=14&category=Eletrônicos&product_id=1")
+    assert resp_filtered.status_code == 200
+    assert "14d_eletronicos.xlsx" in resp_filtered.headers.get("content-disposition", "")
+
+    wb_f = openpyxl.load_workbook(io.BytesIO(resp_filtered.content), data_only=False)
+    ws_f_prod = wb_f["Previsão por Produto"]
+    categories_in_sheet = {
+        ws_f_prod.cell(row=r, column=3).value
+        for r in range(3, ws_f_prod.max_row)
+        if ws_f_prod.cell(row=r, column=3).value
+    }
+    assert len(categories_in_sheet) >= 1
+    assert all("eletr" in str(cat).lower() for cat in categories_in_sheet)
+
+    ws_f_resumo = wb_f["Resumo Executivo"]
+    assert any(
+        isinstance(cell.value, str) and "PRODUTO EM DESTAQUE (ID #1)" in cell.value
+        for row in ws_f_resumo.iter_rows()
+        for cell in row
+    )

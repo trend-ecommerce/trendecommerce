@@ -273,6 +273,59 @@ class ApiService {
 
         timeline: async (productId, historyRange = '6m', horizonDays = 14) => {
             return await this.request(`/forecast/timeline/${parseInt(productId)}?history_range=${encodeURIComponent(historyRange)}&horizon_days=${parseInt(horizonDays)}`);
+        },
+
+        exportExcel: async (horizonDays = 14, category = null, productId = null) => {
+            const params = new URLSearchParams();
+            const safeHorizon = parseInt(horizonDays, 10) || 14;
+            params.set('horizon_days', String(safeHorizon));
+            if (category && String(category).trim() && String(category).trim().toUpperCase() !== 'GERAIS') {
+                params.set('category', String(category).trim());
+            }
+            if (productId) {
+                params.set('product_id', String(parseInt(productId, 10)));
+            }
+
+            const endpoint = `/forecast/export-excel?${params.toString()}`;
+            const url = `${API_BASE_URL}${endpoint}`;
+            const headers = {};
+            const token = this.getToken();
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            let response;
+            try {
+                response = await fetch(url, { method: 'GET', headers });
+            } catch (error) {
+                const msg = 'Não foi possível conectar ao servidor backend. Certifique-se de iniciar a API com: python -m uvicorn src.api.main:app --port 8000';
+                console.error(`[API Error] ${endpoint}:`, msg);
+                throw new Error(msg);
+            }
+
+            if (response.status === 401) {
+                this.clearSession();
+            }
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                let errorMsg = 'Erro ao exportar relatório Excel.';
+                if (errData && errData.detail) {
+                    errorMsg = Array.isArray(errData.detail) ? errData.detail[0].msg : errData.detail;
+                } else if (response.status === 404) {
+                    errorMsg = 'Servidor ou rota de exportação não encontrada (404). Verifique se o backend FastAPI está ativo.';
+                } else if (response.status === 500) {
+                    errorMsg = 'Erro interno do servidor ao gerar o arquivo Excel (500). Tente novamente em instantes.';
+                }
+                console.error(`[API Error] ${endpoint}:`, errorMsg);
+                throw new Error(errorMsg);
+            }
+
+            const blob = await response.blob();
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^";\r\n]+)"?/i);
+            const filename = (match && match[1]) ? match[1] : `trendecommerce_relatorio_${safeHorizon}d.xlsx`;
+            return { blob, filename };
         }
     };
 }
