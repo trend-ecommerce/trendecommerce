@@ -115,38 +115,6 @@ class ApiService {
             return data;
         },
 
-        loginWithGoogle: async (payload) => {
-            const body = typeof payload === 'string' 
-                ? (payload.includes('@') ? { email: payload } : { credential: payload })
-                : payload;
-            const data = await this.request('/auth/google', {
-                method: 'POST',
-                body: JSON.stringify(body)
-            });
-            if (data.access_token) {
-                this.setSession(data.access_token, data.user);
-            }
-            return data;
-        },
-
-        requestGoogleCode: async (email, name) => {
-            return await this.request('/auth/google/request-code', {
-                method: 'POST',
-                body: JSON.stringify({ email, name })
-            });
-        },
-
-        verifyGoogleCode: async (email, code, name) => {
-            const data = await this.request('/auth/google/verify-code', {
-                method: 'POST',
-                body: JSON.stringify({ email, code, name })
-            });
-            if (data.access_token) {
-                this.setSession(data.access_token, data.user);
-            }
-            return data;
-        },
-
         register: async (email, password, name) => {
             return await this.request('/auth/register', {
                 method: 'POST',

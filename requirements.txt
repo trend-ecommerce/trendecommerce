@@ -16,7 +16,6 @@ uvicorn[standard]>=0.29.0
 python-jose[cryptography]>=3.3.0
 bcrypt>=4.0.0
 email-validator>=2.0.0
-google-auth>=2.28.0
 
 # Utilitários & Requisições
 requests>=2.31.0

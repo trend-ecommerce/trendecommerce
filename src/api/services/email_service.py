@@ -290,8 +290,8 @@ Se você não solicitou a recuperação de senha, nenhuma ação é necessária.
         return False, f"Erro no envio do e-mail: {str(e)}"
 
 
-def send_google_verification_email(to_email: str, code: str) -> tuple[bool, str]:
-    """Envia um e-mail com código OTP para validação da Conta Google."""
+def send_verification_email(to_email: str, code: str) -> tuple[bool, str]:
+    """Envia um e-mail com código OTP para confirmação de cadastro."""
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
     smtp_user = os.getenv("SMTP_USER", "trendeccomerceai@gmail.com").strip()
@@ -306,7 +306,7 @@ def send_google_verification_email(to_email: str, code: str) -> tuple[bool, str]
 
     try:
         msg_root = MIMEMultipart("related")
-        msg_root["Subject"] = f"🔐 {code} é o seu código de verificação Google — TrendEcommerce AI"
+        msg_root["Subject"] = f"🔐 {code} é o seu código de verificação de cadastro — TrendEcommerce AI"
         msg_root["From"] = f"{from_name} <{smtp_user}>"
         msg_root["To"] = to_email
         msg_root["Date"] = formatdate(localtime=True)
@@ -315,11 +315,11 @@ def send_google_verification_email(to_email: str, code: str) -> tuple[bool, str]
         msg_alternative = MIMEMultipart("alternative")
         msg_root.attach(msg_alternative)
 
-        text_content = f"""TrendEcommerce AI - Verificação de Conta Google
+        text_content = f"""TrendEcommerce AI - Verificação de Cadastro
 
-Seu código de verificação Google é: {code}
+Seu código de verificação é: {code}
 
-Use este código para confirmar a propriedade do seu e-mail e autenticar com segurança no TrendEcommerce AI.
+Use este código para confirmar o seu e-mail e ativar sua conta no TrendEcommerce AI.
 
 ⚠️ ATENÇÃO DE SEGURANÇA:
 NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM.
@@ -334,7 +334,7 @@ A equipe do TrendEcommerce AI NUNCA solicitará seu código de segurança.
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verificação Google - TrendEcommerce AI</title>
+    <title>Verificação de Cadastro - TrendEcommerce AI</title>
     <style>
         body {{
             margin: 0;
@@ -456,13 +456,13 @@ A equipe do TrendEcommerce AI NUNCA solicitará seu código de segurança.
                     <img class="logo-img" src="cid:trendecommerce_logo" alt="TrendEcommerce AI Logo" />
                 </div>
                 <h1 class="logo-title"><span class="logo-accent">Trend</span>Ecommerce AI</h1>
-                <div class="subtitle">AUTENTICAÇÃO CONTA GOOGLE</div>
+                <div class="subtitle">CONFIRMAÇÃO DE CADASTRO</div>
             </div>
 
             <div class="card-body">
                 <p class="instructions">
-                    Olá! Recebemos uma solicitação para acessar sua conta através do Google.<br>
-                    Utilize o código de validação de 4 dígitos abaixo para autenticar:
+                    Olá! Recebemos uma solicitação para confirmar o seu e-mail.<br>
+                    Utilize o código de verificação abaixo para validar sua conta:
                 </p>
 
                 <div class="otp-box">{code}</div>
@@ -473,12 +473,12 @@ A equipe do TrendEcommerce AI NUNCA solicitará seu código de segurança.
             <div class="security-alert">
                 <div class="security-title">⚠️ NUNCA COMPARTILHE ESTE CÓDIGO COM NINGUÉM</div>
                 <p class="security-text">
-                    Este código confirma que você é o titular desta conta Google. A equipe do <strong>TrendEcommerce AI</strong> nunca entrará em contato solicitando seu código de acesso.
+                    Este código confirma que você é o titular deste e-mail. A equipe do <strong>TrendEcommerce AI</strong> nunca entrará em contato solicitando seu código de acesso.
                 </p>
             </div>
 
             <div class="footer">
-                <p>Se você não tentou fazer login com o Google no TrendEcommerce AI, desconsidere este e-mail.</p>
+                <p>Se você não solicitou este código no TrendEcommerce AI, desconsidere este e-mail.</p>
                 <p>© 2026 TrendEcommerce AI — Inteligência Preditiva de Mercado</p>
             </div>
         </div>
@@ -496,7 +496,7 @@ A equipe do TrendEcommerce AI NUNCA solicitará seu código de segurança.
             Path("frontend/assets/logo.png"),
             Path("frontend/img/logo.png")
         ]
-        
+
         for path in logo_paths:
             if path.exists():
                 try:
@@ -531,12 +531,12 @@ A equipe do TrendEcommerce AI NUNCA solicitará seu código de segurança.
                     server.login(smtp_user, smtp_password)
                     server.sendmail(smtp_user, [to_email], msg_root.as_string())
 
-        logger.info(f"E-mail de validação Google enviado com sucesso para: {to_email}")
-        return True, "E-mail de validação enviado com sucesso!"
+        logger.info(f"E-mail de confirmação de cadastro enviado com sucesso para: {to_email}")
+        return True, "E-mail de confirmação enviado com sucesso!"
 
     except smtplib.SMTPAuthenticationError as e:
         logger.error(f"Erro de autenticação SMTP: {e}")
         return False, "Falha de autenticação no servidor de e-mail (usuário ou senha incorretos)."
     except Exception as e:
-        logger.error(f"Erro ao enviar e-mail Google para {to_email}: {e}")
+        logger.error(f"Erro ao enviar e-mail de confirmação para {to_email}: {e}")
         return False, f"Erro no envio do e-mail: {str(e)}"

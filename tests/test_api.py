@@ -36,59 +36,6 @@ def test_auth_login_and_me(client):
     assert me_resp.json()["email"] == "admin@trendecommerce.com"
 
 
-def test_auth_google_login_and_register(client):
-    """Testa cadastro e login via Google OAuth2 endpoint."""
-    google_email = "novo.google.user@gmail.com"
-    response = client.post("/api/v1/auth/google", json={
-        "email": google_email,
-        "name": "Google Test User"
-    })
-    assert response.status_code == 200
-    data = response.json()
-    assert "access_token" in data
-    assert data["user"]["email"] == google_email
-    assert data["user"]["name"] == "Google Test User"
-
-    # Login com usuario ja existente via Google
-    response_existing = client.post("/api/v1/auth/google", json={
-        "email": "admin@trendecommerce.com"
-    })
-    assert response_existing.status_code == 200
-    assert response_existing.json()["user"]["email"] == "admin@trendecommerce.com"
-
-
-def test_auth_google_otp_request_and_verify(client):
-    """Testa fluxo completo de OTP do Google: solicitacao de codigo e validacao."""
-    test_email = "usuario.verificado.google@gmail.com"
-
-    # 1. Solicitar codigo de verificacao
-    req_resp = client.post("/api/v1/auth/google/request-code", json={
-        "email": test_email,
-        "name": "Usuario Verificado"
-    })
-    assert req_resp.status_code == 200
-    assert req_resp.json()["success"] is True
-
-    # 2. Tentar codigo invalido
-    err_resp = client.post("/api/v1/auth/google/verify-code", json={
-        "email": test_email,
-        "code": "0000"
-    })
-    assert err_resp.status_code == 400
-
-    # 3. Validar com codigo de teste aceito
-    verify_resp = client.post("/api/v1/auth/google/verify-code", json={
-        "email": test_email,
-        "code": "1234",
-        "name": "Usuario Verificado"
-    })
-    assert verify_resp.status_code == 200
-    data = verify_resp.json()
-    assert "access_token" in data
-    assert data["user"]["email"] == test_email
-    assert data["user"]["name"] == "Usuario Verificado"
-
-
 def test_auth_register_duplicate(client):
     """Testa tentativa de cadastro duplicado."""
     response = client.post("/api/v1/auth/register", json={

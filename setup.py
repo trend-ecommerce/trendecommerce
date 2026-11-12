@@ -19,7 +19,6 @@ setup(
         'bcrypt>=4.0.0',
         'python-jose[cryptography]>=3.3.0',
         'email-validator>=2.0.0',
-        'google-auth>=2.28.0',
         'requests>=2.31.0',
         'httpx>=0.27.0',
         'python-dotenv>=1.0.0',

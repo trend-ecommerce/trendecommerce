@@ -340,9 +340,6 @@ python -m src.ml.train_pipeline
 | `POST` | `/api/v1/auth/verify-email` | Confirma o código OTP de verificação de cadastro e retorna token JWT |
 | `POST` | `/api/v1/auth/resend-verification` | Reenvia o e-mail/código de confirmação de cadastro |
 | `POST` | `/api/v1/auth/login` | Autentica usuário (com rate limiting) e retorna token JWT |
-| `POST` | `/api/v1/auth/google` | Autentica ou cadastra usuário via Google Identity Services (GIS) |
-| `POST` | `/api/v1/auth/google/request-code` | Solicita código OTP por e-mail para validação de conta Google |
-| `POST` | `/api/v1/auth/google/verify-code` | Valida código OTP do Google e retorna token JWT |
 | `GET` | `/api/v1/auth/me` | Retorna os dados do perfil do usuário autenticado |
 | `POST` | `/api/v1/auth/forgot-password` | Solicita ao Supabase Auth o envio do código OTP de 6 dígitos para recuperação de senha |
 | `POST` | `/api/v1/auth/verify-reset-code` | Valida o código OTP de 6 dígitos no Supabase Auth e emite um `reset_token` temporário |

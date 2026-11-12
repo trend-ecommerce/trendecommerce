@@ -16,24 +16,9 @@ class LoginRequest(BaseModel):
     password: str = Field(..., description="Senha do usuário")
 
 
-class GoogleAuthRequest(BaseModel):
-    token: Optional[str] = Field(None, description="Google ID Token JWT")
-    credential: Optional[str] = Field(None, description="Google ID Token JWT (alias GIS credential)")
-    email: Optional[EmailStr] = Field(None, description="Email fornecido pelo Google")
-    name: Optional[str] = Field(None, description="Nome do usuário do Google")
-    picture: Optional[str] = Field(None, description="URL do avatar do Google")
-    sub: Optional[str] = Field(None, description="Google User ID")
-
-
-class GoogleRequestCodeRequest(BaseModel):
-    email: EmailStr = Field(..., description="Email da conta Google selecionada")
-    name: Optional[str] = Field(None, description="Nome de exibição da conta Google")
-
-
-class GoogleVerifyCodeRequest(BaseModel):
-    email: EmailStr = Field(..., description="Email da conta Google")
+class EmailVerifyCodeRequest(BaseModel):
+    email: EmailStr = Field(..., description="Email de cadastro do usuário")
     code: str = Field(..., min_length=4, max_length=4, description="Código de 4 dígitos enviado ao e-mail")
-    name: Optional[str] = Field(None, description="Nome da conta Google")
 
 
 class UserResponse(BaseModel):
