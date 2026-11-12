@@ -155,7 +155,8 @@ def test_auth_forgot_and_reset_password(client, monkeypatch):
     })
     assert err_verify.status_code == 400
 
-    # 4. Codigo correto de 6 digitos deve retornar ticket temporario (reset_token)
+    # 4. Codigo correto de 6 digitos deve retornar ticket JWT stateless (reset_token)
+    assert not hasattr(auth_router, "_reset_tickets")
     ok_verify = client.post("/api/v1/auth/verify-reset-code", json={
         "email": "admin@trendecommerce.com",
         "code": "654321"
@@ -164,7 +165,29 @@ def test_auth_forgot_and_reset_password(client, monkeypatch):
     verify_data = ok_verify.json()
     assert verify_data["success"] is True
     reset_token = verify_data.get("reset_token")
-    assert reset_token and len(reset_token) >= 20
+    assert reset_token and len(reset_token.split(".")) == 3
+
+    from datetime import datetime, timedelta, timezone
+    from jose import jwt
+    from src.api.dependencies import SECRET_KEY, ALGORITHM
+
+    decoded_ticket = jwt.decode(reset_token, SECRET_KEY, algorithms=[ALGORITHM])
+    assert decoded_ticket["purpose"] == "password_reset"
+    assert decoded_ticket["sub"] == "admin@trendecommerce.com"
+    assert decoded_ticket["sb_access_token"] == "sb_recovery_access_token_xyz"
+    assert decoded_ticket.get("pwd_fp")
+
+    # 4b. Token expirado deve retornar HTTP 400
+    expired_payload = dict(decoded_ticket)
+    expired_payload["exp"] = datetime.now(timezone.utc) - timedelta(minutes=1)
+    expired_jwt = jwt.encode(expired_payload, SECRET_KEY, algorithm=ALGORITHM)
+    expired_resp = client.post("/api/v1/auth/reset-password", json={
+        "email": "admin@trendecommerce.com",
+        "reset_token": expired_jwt,
+        "new_password": "novasenhaforte123"
+    })
+    assert expired_resp.status_code == 400
+    assert "expirou" in expired_resp.json()["detail"].lower()
 
     # 5. Tentativa de reset com '1234' ou ticket invalido deve ser bloqueada (400)
     bad_reset = client.post("/api/v1/auth/reset-password", json={

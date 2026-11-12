@@ -469,12 +469,12 @@ function setupRecoveryStep3() {
     const confirmErr = document.getElementById('recoveryConfirmPassError');
 
     const storedEmail = sessionStorage.getItem('recovery_email') || '';
-    const storedToken = sessionStorage.getItem('recovery_token') || '';
+    let currentToken = sessionStorage.getItem('recovery_token') || '';
     if (emailInput && storedEmail) {
         emailInput.value = storedEmail;
     }
 
-    if (!storedToken) {
+    if (!currentToken) {
         sessionStorage.setItem(
             'recovery_redirect_notice',
             'Sessão de recuperação ausente ou expirada. Solicite um novo código para redefinir sua senha.'
@@ -483,13 +483,40 @@ function setupRecoveryStep3() {
         return;
     }
 
+    const showRetryCodeLink = () => {
+        if (!confirmErr && !passErr) return;
+        let retryLink = document.getElementById('recoveryRetryCodeLink');
+        if (!retryLink) {
+            retryLink = document.createElement('a');
+            retryLink.id = 'recoveryRetryCodeLink';
+            retryLink.href = 'recuperarsenha.html';
+            retryLink.className = 'login-span';
+            retryLink.style.color = '#38bdf8';
+            retryLink.style.textDecoration = 'underline';
+            retryLink.style.marginTop = '4px';
+            retryLink.textContent = 'Solicitar novo código';
+            const anchor = confirmErr || passErr;
+            anchor.insertAdjacentElement('afterend', retryLink);
+        }
+        retryLink.style.display = 'inline-block';
+    };
+
+    const hideRetryCodeLink = () => {
+        const retryLink = document.getElementById('recoveryRetryCodeLink');
+        if (retryLink) retryLink.style.display = 'none';
+    };
+
     form.onsubmit = async (e) => {
         e.preventDefault();
         if (passErr) {
             passErr.style.color = '';
             passErr.textContent = '';
         }
-        if (confirmErr) confirmErr.textContent = '';
+        if (confirmErr) {
+            confirmErr.style.color = '';
+            confirmErr.textContent = '';
+        }
+        hideRetryCodeLink();
 
         const email = (emailInput?.value || storedEmail || '').trim();
         const newPass = passInput?.value || '';
@@ -500,8 +527,9 @@ function setupRecoveryStep3() {
             if (passErr) passErr.textContent = 'Informe o email.';
             hasError = true;
         }
-        if (!storedToken) {
-            if (passErr) passErr.textContent = 'Sessão de recuperação expirada. Inicie a recuperação novamente.';
+        if (!currentToken) {
+            if (confirmErr) confirmErr.textContent = 'Sessão de recuperação expirada. Solicite um novo código.';
+            showRetryCodeLink();
             hasError = true;
         }
         if (newPass.length < 6) {
@@ -520,16 +548,36 @@ function setupRecoveryStep3() {
         }
 
         try {
-            await window.apiService.auth.resetPassword(email, storedToken, newPass);
+            await window.apiService.auth.resetPassword(email, currentToken, newPass);
             sessionStorage.removeItem('recovery_email');
             sessionStorage.removeItem('recovery_token');
             sessionStorage.removeItem('recovery_code');
             sessionStorage.removeItem('recovery_notice');
             window.location.replace('login.html?reset=1');
         } catch (err) {
-            if (passErr) {
+            const rawMsg = err.message || 'Erro ao redefinir senha.';
+            const lowerMsg = rawMsg.toLowerCase();
+            const isTokenError =
+                lowerMsg.includes('sessão') ||
+                lowerMsg.includes('expirad') ||
+                lowerMsg.includes('inválid') ||
+                lowerMsg.includes('utilizad') ||
+                lowerMsg.includes('token');
+
+            if (isTokenError) {
+                sessionStorage.removeItem('recovery_token');
+                currentToken = '';
+                if (confirmErr) {
+                    confirmErr.style.color = '#ff6b81';
+                    confirmErr.textContent = rawMsg;
+                } else if (passErr) {
+                    passErr.style.color = '#ff6b81';
+                    passErr.textContent = rawMsg;
+                }
+                showRetryCodeLink();
+            } else if (passErr) {
                 passErr.style.color = '#ff6b81';
-                passErr.textContent = err.message || 'Erro ao redefinir senha.';
+                passErr.textContent = rawMsg;
             }
         } finally {
             if (submitBtn) {

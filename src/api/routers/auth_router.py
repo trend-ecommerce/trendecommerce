@@ -1,12 +1,16 @@
+import hashlib
 import logging
 import random
-import secrets
 import time
-from typing import Any, Dict
+from datetime import datetime, timedelta, timezone
+from typing import Dict
 from fastapi import APIRouter, Depends, HTTPException, status
+from jose import ExpiredSignatureError, JWTError, jwt
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import (
+    ALGORITHM,
+    SECRET_KEY,
     get_db, 
     verify_password, 
     get_password_hash, 
@@ -45,17 +49,33 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
-# Armazenamento em memória para tickets de recuperação de senha, Google Auth e tentativas de login
-_reset_tickets: Dict[str, Dict[str, Any]] = {}
+# Armazenamento em memória para Google Auth, verificação de e-mail e tentativas de login
 _google_otp_codes: Dict[str, dict] = {}
 _email_verify_codes: Dict[str, str] = {}
 _login_attempts: Dict[str, list[float]] = {}
 
 
-def _purge_expired_reset_tickets(now: float) -> None:
-    expired = [token for token, data in _reset_tickets.items() if data.get("expires", 0) < now]
-    for token in expired:
-        _reset_tickets.pop(token, None)
+def _password_fingerprint(hashed_password: str) -> str:
+    """Gera impressão digital curta do hash atual da senha para invalidar tickets já usados."""
+    return hashlib.sha256((hashed_password or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _create_password_reset_ticket(
+    email: str,
+    sb_access_token: str,
+    current_hashed_password: str,
+) -> str:
+    """Cria um ticket JWT stateless assinado (válido por 15 min) para redefinição de senha."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "purpose": "password_reset",
+        "sub": email,
+        "sb_access_token": sb_access_token,
+        "pwd_fp": _password_fingerprint(current_hashed_password),
+        "iat": int(now.timestamp()),
+        "exp": now + timedelta(minutes=15),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="Cadastrar novo usuário com email válido")
@@ -478,7 +498,7 @@ def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)
 
 @router.post("/verify-reset-code", response_model=MessageResponse, summary="Verificar código OTP de recuperação de senha")
 def verify_reset_code(request: PasswordResetVerifyRequest, db: Session = Depends(get_db)):
-    """Valida o código OTP de 6 dígitos no Supabase Auth e emite um ticket temporário de redefinição."""
+    """Valida o código OTP de 6 dígitos no Supabase Auth e emite um ticket JWT stateless de redefinição."""
     email_clean = str(request.email).lower().strip()
     user = db.query(User).filter(User.email == email_clean).first()
     if not user:
@@ -502,15 +522,11 @@ def verify_reset_code(request: PasswordResetVerifyRequest, db: Session = Depends
             detail=msg,
         )
 
-    now = time.time()
-    _purge_expired_reset_tickets(now)
-
-    reset_token = secrets.token_urlsafe(32)
-    _reset_tickets[reset_token] = {
-        "email": email_clean,
-        "access_token": access_token,
-        "expires": now + 15 * 60,
-    }
+    reset_token = _create_password_reset_ticket(
+        email=email_clean,
+        sb_access_token=access_token,
+        current_hashed_password=user.hashed_password,
+    )
 
     return MessageResponse(
         message="Código de verificação validado com sucesso!",
@@ -521,38 +537,45 @@ def verify_reset_code(request: PasswordResetVerifyRequest, db: Session = Depends
 
 @router.post("/reset-password", response_model=MessageResponse, summary="Redefinir senha com ticket de recuperação")
 def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
-    """Valida o ticket temporário emitido em /verify-reset-code e atualiza a senha localmente e no Supabase Auth."""
+    """Valida o ticket JWT emitido em /verify-reset-code e atualiza a senha localmente e no Supabase Auth."""
     email_clean = str(request.email).lower().strip()
-    ticket_id = (request.reset_token or request.code or "").strip()
-    if not ticket_id:
+    ticket_jwt = (request.reset_token or request.code or "").strip()
+    if not ticket_jwt:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de recuperação ausente ou inválido. Solicite um novo código."
         )
 
-    now = time.time()
-    ticket_data = _reset_tickets.get(ticket_id)
-    if not ticket_data:
-        _purge_expired_reset_tickets(now)
+    try:
+        payload = jwt.decode(ticket_jwt, SECRET_KEY, algorithms=[ALGORITHM])
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sua sessão de recuperação expirou. Solicite um novo código."
+        )
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Sessão de recuperação inválida ou expirada. Solicite um novo código."
         )
 
-    if ticket_data.get("expires", 0) < now:
-        _reset_tickets.pop(ticket_id, None)
-        _purge_expired_reset_tickets(now)
+    if payload.get("purpose") != "password_reset":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Sua sessão de recuperação expirou. Solicite um novo código."
+            detail="Token de recuperação inválido. Solicite um novo código."
         )
 
-    _purge_expired_reset_tickets(now)
-
-    if ticket_data.get("email") != email_clean:
+    if str(payload.get("sub") or "").lower().strip() != email_clean:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de recuperação não corresponde ao e-mail informado."
+        )
+
+    sb_access_token = str(payload.get("sb_access_token") or "").strip()
+    if not sb_access_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sessão de recuperação inválida ou expirada. Solicite um novo código."
         )
 
     user = db.query(User).filter(User.email == email_clean).first()
@@ -562,20 +585,23 @@ def reset_password(request: PasswordResetConfirmRequest, db: Session = Depends(g
             detail="Usuário não encontrado."
         )
 
+    if payload.get("pwd_fp") != _password_fingerprint(user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sessão de recuperação já utilizada ou expirada. Solicite um novo código."
+        )
+
     if len(request.new_password) < 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A nova senha deve conter no mínimo 6 caracteres."
         )
 
-    # Ticket é de uso único: consome imediatamente após validações
-    _reset_tickets.pop(ticket_id, None)
-
     user.hashed_password = get_password_hash(request.new_password)
     db.commit()
     db.refresh(user)
 
-    sb_updated = supabase_update_auth_password(ticket_data["access_token"], request.new_password)
+    sb_updated = supabase_update_auth_password(sb_access_token, request.new_password)
     if not sb_updated:
         logger.warning(
             "[RECUPERACAO DE SENHA] Senha local atualizada, porém não foi possível sincronizar no Supabase Auth | email=%s",
