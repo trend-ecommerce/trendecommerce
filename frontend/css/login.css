@@ -191,11 +191,11 @@ textarea {
 
 .password-container button {
     position: absolute;
-    right: 8px;
+    right: 6px;
     top: 50%;
     transform: translateY(-50%);
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     margin: 0;
     padding: 0;
     display: flex;
@@ -390,6 +390,7 @@ textarea {
 
 .codigo-resend {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: center;
     gap: 6px;
@@ -399,17 +400,23 @@ textarea {
     color: #A9B8C7;
     margin-top: -12px;
     margin-bottom: 6px;
+    text-align: center;
 }
 
 .codigo-resend button {
     background: transparent;
     border: none;
-    color: #A9B8C7;
+    color: #38bdf8;
     cursor: pointer;
     font-size: inherit;
-    font-weight: 500;
-    padding: 0;
-    text-decoration: none;
+    font-weight: 600;
+    padding: 6px 8px;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: underline;
+    text-underline-offset: 3px;
     transition: color 0.2s ease;
 }
 
@@ -540,13 +547,13 @@ textarea {
     }
 
     .password-container button {
-        right: 6px;
+        right: 4px;
     }
 
     .button-right {
         align-self: center;
-        min-height: 38px;
-        height: 38px;
+        min-height: 40px;
+        height: 40px;
         font-size: 14px;
         padding: 0 22px;
         margin-top: 4px;
@@ -554,18 +561,61 @@ textarea {
 
     .login-span {
         font-size: 12px;
+        padding: 4px 8px;
     }
 
     .codigo-container {
-        gap: 6px;
+        gap: 8px;
         margin-bottom: 14px;
         max-width: 100%;
     }
 
     .codigo-input {
-        width: 40px;
+        width: 44px;
+        max-width: 44px;
+        height: 44px;
+        font-size: 18px;
+    }
+}
+
+/* ==========================================
+   Celulares Compactos (<= 380px)
+   ========================================== */
+@media (max-width: 380px) {
+    body {
+        padding: 10px 8px;
+    }
+
+    .logo img {
+        width: 78px;
+    }
+
+    .login-container {
+        border-radius: 22px;
+    }
+
+    .login-left {
+        min-height: 82px;
+        padding: 12px 14px;
+        border-radius: 22px 22px 16px 16px;
+    }
+
+    .login-left h1 {
+        font-size: 13px;
+    }
+
+    .login-right {
+        padding: 16px 14px 20px;
+    }
+
+    .codigo-container {
+        gap: 6px;
+    }
+
+    .codigo-input {
+        width: 42px;
         max-width: 42px;
-        height: 40px;
+        height: 42px;
         font-size: 17px;
     }
 }

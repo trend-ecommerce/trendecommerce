@@ -290,7 +290,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const ctx = canvas.getContext('2d');
         const width = canvas.width = Math.round(parentW);
-        const height = canvas.height = 340;
+        const parentH = Math.round(canvas.parentElement.getBoundingClientRect().height || 300);
+        const height = canvas.height = Math.max(220, parentH);
 
         ctx.clearRect(0, 0, width, height);
 
@@ -300,10 +301,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (hist.length === 0 && fore.length === 0) return;
 
         // Dimensões da área de plotagem
-        const padLeft = 52;
-        const padRight = 36;
-        const padTop = 50;
-        const padBottom = 45;
+        const isNarrowChart = width < 360;
+        const padLeft = isNarrowChart ? 38 : 52;
+        const padRight = isNarrowChart ? 16 : 36;
+        const padTop = isNarrowChart ? 38 : 50;
+        const padBottom = isNarrowChart ? 32 : 45;
 
         const chartW = width - padLeft - padRight;
         const chartH = height - padTop - padBottom;
@@ -630,9 +632,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const points = state.points || [];
             if (!points || points.length === 0) return;
 
-            const padLeft = 52;
-            const padRight = 36;
             const width = canvas.width;
+            const isNarrowChart = width < 360;
+            const padLeft = isNarrowChart ? 38 : 52;
+            const padRight = isNarrowChart ? 16 : 36;
 
             // Limite da área horizontal útil do gráfico
             const inHorizontalBounds = mouseX >= (padLeft - 10) && mouseX <= (width - padRight + 10);
