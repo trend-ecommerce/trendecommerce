@@ -31,7 +31,8 @@
         const layout = document.getElementById('dashboardSection');
         const toggleBtn = document.getElementById('sidebarToggleBtn');
         const savedSidebar = localStorage.getItem('trend_sidebar_open');
-        let isSidebarOpen = savedSidebar !== null ? savedSidebar === 'true' : true;
+        const isCompactViewport = window.matchMedia('(max-width: 992px)').matches;
+        let isSidebarOpen = savedSidebar !== null ? savedSidebar === 'true' : !isCompactViewport;
 
         const applySidebarState = () => {
             if (isSidebarOpen) {
